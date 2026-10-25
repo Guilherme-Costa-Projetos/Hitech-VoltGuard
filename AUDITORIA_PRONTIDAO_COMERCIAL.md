@@ -2,7 +2,7 @@
 
 **Atualização:** 25/10/2026
 **Escopo:** código da branch de prontidão, deploy do piloto no Render e metadados/consultas somente de estrutura e agregados do PostgreSQL em 25/10.
-**Resultado:** o deploy do piloto está `live`, mas o acesso HTTP após o deploy mais recente não foi confirmado; o produto ainda não está pronto para produção comercial nem para receber dados operacionais reais.
+**Resultado:** o deploy do piloto está `live`; após a implantação, `/health` respondeu HTTP 200 e a página de login carregou. A autenticação e os fluxos que gravam dados não foram testados nesta verificação. O produto ainda não está pronto para produção comercial nem para receber dados operacionais reais.
 
 ## Bloqueios prioritários
 
@@ -22,7 +22,7 @@
 ### P0 — Tornar o health check HTTP efetivo
 
 - A configuração inicial do serviço estava sem `healthCheckPath`; `/health` foi definido no Render em 23/10 e o deploy da configuração concluiu como `live`.
-- A rota implementa `SELECT 1` e responde erro se o banco não responder. Consultas anteriores à URL pública `/health` retornaram HTTP 200 e o endpoint de status confirmou auto-cadastro desativado. Em 25/10/2026, Render confirmou o deploy mais recente como `live`; uma nova requisição HTTP não pôde ser verificada deste ambiente por falha de resolução DNS. Portanto, a saúde HTTP pós-deploy mais recente permanece pendente de verificação direta no navegador.
+- A rota implementa `SELECT 1` e responde erro se o banco não responder. Em 25/10/2026, após o deploy `dep-dbf04h0473hc739h4fi0` do commit `4c6802de7777c4dd6bebb4dc1d03113e3d12df94`, a verificação direta no navegador retornou HTTP 200 com `{"status":"ok","service":"voltguard","mode":"stored-data"}`. A raiz carregou a tela de login; nenhuma autenticação nem gravação foi feita nesta verificação.
 - O modo automático de deploy do Render foi alterado de `On Commit` para `After CI Checks Pass`; a próxima revisão só será publicada após os checks configurados no GitHub passarem.
 
 **Ação para liberar:** abrir o endpoint `/health` do piloto no navegador do usuário após o deploy e confirmar HTTP 200; confirmar separadamente no Dashboard qual recurso fornece `DATABASE_URL`, sem compartilhar seu valor. `SELECT 1` confirma conexão, mas não identidade nem histórico do banco.
@@ -72,7 +72,7 @@
 - Login de contas com MFA habilitado exige segundo fator. Cadastro público fecha por padrão e só abre com `ALLOW_SELF_SERVICE_REGISTRATION=1` configurado explicitamente.
 - Acrescentado `scripts/provision_first_tenant.py`: inicializa a primeira organização apenas quando todas as tabelas estão vazias, exige confirmação e senha em terminal interativo, e reaproveita as validações do endpoint existente. Não altera dados de uma base preenchida nem ativa o cadastro público do serviço.
 - Novo teste percorre todas as rotas `/api/` e falha se alguma não exigir usuário autenticado ou credencial de dispositivo explicitamente.
-- Health check HTTP `/health` configurado no Render e declarado no Blueprint. A resposta HTTP pós-deploy mais recente ainda precisa ser verificada pelo navegador.
+- Health check HTTP `/health` configurado no Render e declarado no Blueprint; verificado após o deploy atual com HTTP 200. A raiz carregou a tela de login, sem autenticar ou alterar dados.
 - Deploy do serviço configurado para aguardar CI do GitHub. O commit `ec4aaf3258d097557fafb0aab211a0fe56f35db7` está `live` no Render; a execução GitHub Actions `40196676008` passou em Gitleaks, `pip-audit`, 31 testes de integração, sintaxe Python/JavaScript e build Docker.
 
 ## Ordem sugerida de liberação

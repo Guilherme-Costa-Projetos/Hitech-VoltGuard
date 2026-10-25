@@ -2,18 +2,21 @@
 
 ## Antes do deploy
 
-- [ ] Repositório GitHub privado criado.
+- [ ] Confirmar que este procedimento é para um workspace/projeto Render novo e vazio. Não aplicar/sincronizar o Blueprint no piloto ativo: ele contém dados, roda PostgreSQL 18 e não corresponde ao Blueprint PostgreSQL 16; uma configuração paralela pode criar outro banco/serviço ou alterar associações.
+- [ ] Confirmar e documentar se o repositório GitHub deve ser público ou privado; em 25/10/2026 o repositório estava público. Não armazenar segredos ou dados de clientes no repositório.
 - [ ] Arquivos do pacote extraídos diretamente na raiz do repositório.
 - [ ] Pasta `vendor/` enviada com `chart.umd.min.js`, `html5-qrcode.min.js` e as duas licenças.
 - [ ] `.env`, banco local e segredos reais não foram enviados ao Git.
 - [ ] `render.yaml` revisado; planos/região/recursos confirmados no painel do Render.
-- [ ] Dependências e testes locais executados em ambiente com as dependências de `requirements.txt` instaladas.
+- [ ] Dependências de produção e de teste instaladas (`requirements.txt` e `requirements-test.txt`); suíte local aprovada.
+- [ ] Rever `SECURITY_REVIEW.md`; não considerar pendências de segurança/operação como aceites para dados reais sem decisão explícita.
 
 ## Durante o deploy
 
 - [ ] Blueprint criou serviço web e banco PostgreSQL.
 - [ ] `SECRET_KEY` foi gerada pelo Render e está definida como variável secreta.
 - [ ] `DATABASE_URL` aponta para o banco correto.
+- [ ] `ALLOW_SELF_SERVICE_REGISTRATION` permanece `0` até existir confirmação de e-mail e onboarding controlado.
 - [ ] Preservar `SECRET_KEY` entre deploys; os segredos TOTP existentes são criptografados com uma chave derivada dela.
 - [ ] Se houver mais de uma instância, `RATE_LIMIT_STORAGE_URI` aponta para Redis gerenciado e está cadastrada como variável secreta; sem essa configuração, limites de requisição ficam locais a cada processo.
 - [ ] Build e start terminaram sem erros.
@@ -35,7 +38,7 @@
 - [ ] Tentar abrir `/api/users` com uma conta não CEO e confirmar resposta 403; revisar que as alterações aparecem na auditoria.
 - [ ] Com Técnico de Campo, confirmar que `GET /api/devices/credentials` e `GET /api/export/executive-report` retornam 403; com Gerente, confirmar que a lista de credenciais retorna 200 e a exportação executiva retorna 403.
 - [ ] Como CEO, encerrar as sessões de uma conta de teste; confirmar que ela precisa entrar novamente e que a ação aparece na auditoria.
-- [ ] Como CEO/Gerente de teste, ativar MFA em **Minha conta**, escanear o QR uma vez, confirmar o código TOTP, escolher nova senha e guardar os códigos de recuperação; confirmar que o login usa apenas senha e que a troca posterior de senha pede TOTP (ou um código de recuperação de uso único).
+- [ ] Como cada perfil (CEO, Gerente e Técnico de Campo), ativar MFA em **Minha conta**, escanear o QR uma vez, confirmar o código TOTP, escolher nova senha e guardar os códigos de recuperação; confirmar que login e troca posterior de senha pedem TOTP (ou um código de recuperação de uso único).
 - [ ] Testar leitura QR manual; testar câmera somente em navegador/ambiente com permissão.
 - [ ] Criar ordem de serviço e alterar estado.
 - [ ] Testar exportação CSV autenticada.
@@ -46,9 +49,12 @@
 
 ## Antes de qualquer piloto com dados reais
 
-- [ ] Plano PostgreSQL persistente escolhido e política de expiração confirmada.
+- [ ] No serviço histórico em `main`, confirmar o possível `/app/voltguard.db` efêmero; o Dashboard mostrou ausência de `DATABASE_URL` e o código usa SQLite como padrão. Render Shell/SSH não está disponível no plano Free. Preservar qualquer dado enquanto o container ainda está em execução; não implantar, reiniciar ou suspender antes de um método seguro e aprovado de exportação.
+- [ ] Não usar dados reais no serviço/banco Free; Render declara que Free é para teste, não produção, e o PostgreSQL Free expira em 30 dias, sem backup gerenciado.
+- [ ] Confirmar no Dashboard qual banco cada serviço usa e a data de expiração; `dpg-db9as5gn74is73f2felg-a` expira em 15/11/2026 23:07 UTC e contém registros. Resolver antes da data sem substituir `DATABASE_URL` às cegas e sem executar o Blueprint (PostgreSQL 16) sobre o recurso existente (PostgreSQL 18).
+- [ ] Plano PostgreSQL persistente e custo recorrente aprovados pelo responsável; se não aprovado, manter apenas demonstração e planejar encerramento/exportação antes da expiração.
 - [ ] Procedimento em [DATABASE_OPERATIONS.md](DATABASE_OPERATIONS.md) seguido; exportação armazenada em local privado.
-- [ ] Restauração validada em banco separado, sem apontar o serviço ativo antes da validação.
+- [ ] Restauração completa validada em PostgreSQL separado e vazio, sem apontar o serviço ativo antes da validação. `pg_restore --list` sozinho não conta como teste de restauração.
 - [ ] Revisão independente de segurança e testes de isolamento concluídos.
 - [ ] Migrações de banco revisadas com backup.
 - [ ] Política de privacidade, retenção, suporte e resposta a incidentes definida.

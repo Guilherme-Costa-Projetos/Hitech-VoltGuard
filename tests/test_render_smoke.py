@@ -1,23 +1,50 @@
 """Smoke/integration tests for the Render deployment candidate."""
 import os
+import json
+import hashlib
+import secrets
 import tempfile
 import unittest
 from pathlib import Path
+from datetime import datetime, timedelta
+from unittest.mock import patch
+import httpx
+from starlette.requests import Request
+from starlette.websockets import WebSocketDisconnect
 
-_DB_FILE = Path(tempfile.gettempdir()) / f"voltguard-test-{os.getpid()}.db"
+_DB_FILE = Path(tempfile.gettempdir()) / f"voltguard-test-{os.getpid()}-{secrets.token_hex(8)}.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_FILE.as_posix()}"
 os.environ["SECRET_KEY"] = "test-only-secret-key-with-more-than-32-characters"
 os.environ["ENABLE_DEMO_USERS"] = "0"
 os.environ["SIMULATE_TELEMETRY"] = "0"
+os.environ["ALLOW_SELF_SERVICE_REGISTRATION"] = "1"
 
 from fastapi.testclient import TestClient
-from main import app
+from main import (
+    app, TenantSubscriptionModel, UserModel, SessionLocal, encrypt_totp_secret,
+    hash_recovery_code, pyotp, rate_limit_client_address, get_current_user,
+    PanelModel, PanelHistoryModel, AlarmModel, WorkOrderModel,
+    WorkOrderChecklistItemModel, WorkOrderChecklistTemplateModel,
+    AuditLogModel, InventoryModel, AssetModel, MaintenancePlanModel,
+    MaintenanceTaskModel, DeviceCredentialModel, WebSocketTicketModel,
+)
 
 
 class VoltGuardSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(app)
+        # SlowAPI correctly applies IP-based limits in production. Give each
+        # test a distinct synthetic client address so one test cannot consume
+        # another test's registration/login quota through shared limiter state.
+        cls._client_ip_counter = 1
+
+    def setUp(self):
+        type(self)._client_ip_counter += 1
+        client_ip = f"192.0.2.{type(self)._client_ip_counter}"
+        self.client = TestClient(app, client=(client_ip, 12345))
+
+    def tearDown(self):
+        self.client.close()
 
     def create_tenant(self, suffix):
         tenant_id = f"TEST-{suffix}".upper()
@@ -35,11 +62,57 @@ class VoltGuardSmokeTests(unittest.TestCase):
         self.assertEqual(login.status_code, 200, login.text)
         return tenant_id, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
+    def test_subscription_expiry_is_calculated_for_each_insert(self):
+        first_created = datetime(2026, 1, 1)
+        second_created = datetime(2026, 1, 2)
+        expiry_default = TenantSubscriptionModel.__table__.c.expires_at.default
+        self.assertTrue(callable(expiry_default.arg))
+        with patch("main.utcnow", side_effect=[first_created, second_created]):
+            first_expiry = expiry_default.arg(None)
+            second_expiry = expiry_default.arg(None)
+        self.assertEqual(second_expiry - first_expiry, timedelta(days=1))
+
+    def test_chunked_device_payload_is_limited_without_content_length(self):
+        body = iter((b"x" * 16_000, b"x" * 1_000))
+        response = self.client.post(
+            "/api/device/telemetry",
+            headers={"Authorization": "Bearer invalid"},
+            content=body,
+        )
+        self.assertEqual(response.status_code, 413, response.text)
+        self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+
+    def test_render_rate_limit_uses_cloudflare_ip_not_forwarded_for(self):
+        request = Request({
+            "type": "http", "http_version": "1.1", "method": "GET", "scheme": "http",
+            "path": "/api/token", "raw_path": b"/api/token", "query_string": b"",
+            "headers": [(b"cf-connecting-ip", b"198.51.100.8"),
+                        (b"x-forwarded-for", b"203.0.113.99")],
+            "client": ("10.0.0.2", 12345), "server": ("testserver", 80),
+        })
+        with patch.dict(os.environ, {"RENDER": "true"}):
+            self.assertEqual(rate_limit_client_address(request), "198.51.100.8")
+
+    def test_local_rate_limit_ignores_forwarded_for(self):
+        request = Request({
+            "type": "http", "http_version": "1.1", "method": "GET", "scheme": "http",
+            "path": "/api/token", "raw_path": b"/api/token", "query_string": b"",
+            "headers": [(b"x-forwarded-for", b"203.0.113.99")],
+            "client": ("192.0.2.24", 12345), "server": ("testserver", 80),
+        })
+        with patch.dict(os.environ):
+            os.environ.pop("RENDER", None)
+            self.assertEqual(rate_limit_client_address(request), "192.0.2.24")
+
     def test_health_and_headers(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["status"], "ok")
         self.assertEqual(response.headers.get("x-content-type-options"), "nosniff")
+        with patch.dict(os.environ, {"RENDER": "true"}):
+            proxied_https = self.client.get("/health", headers={"X-Forwarded-Proto": "https"})
+        self.assertEqual(proxied_https.headers.get("strict-transport-security"), "max-age=31536000; includeSubDomains")
 
     def test_registration_login_and_tenant_isolation(self):
         tenant_a, headers_a = self.create_tenant("A")
@@ -58,6 +131,372 @@ class VoltGuardSmokeTests(unittest.TestCase):
         foreign_panel = next(iter(ids_b))
         forbidden_access = self.client.get(f"/api/panels/qr/{foreign_panel}", headers=headers_a)
         self.assertEqual(forbidden_access.status_code, 404)
+
+    def test_tenant_isolation_across_operational_reads_and_mutations(self):
+        _, headers_a = self.create_tenant("ISOLATIONREADA")
+        tenant_b, headers_b = self.create_tenant("ISOLATIONREADB")
+        foreign_panel_id = "FOREIGN-ISOLATION-PANEL"
+
+        with SessionLocal() as db:
+            panel = PanelModel(
+                id=foreign_panel_id, tenant_id=tenant_b, name="Registro confidencial B",
+                location="Localização confidencial B", voltage="380 V AC",
+                gateway_qr="QR-FOREIGN-ISOLATION",
+            )
+            db.add(panel)
+            db.flush()
+            history = PanelHistoryModel(
+                panel_id=panel.id, tenant_id=tenant_b, timestamp="2026-10-23T12:00:00Z",
+                temperature=88.5, current=42.0,
+            )
+            alarm = AlarmModel(
+                tenant_id=tenant_b, panel_id=panel.id, alarm_type="TEST_ISOLATION",
+                severity="CRITICAL", message="Alarme privado da organização B",
+            )
+            asset = AssetModel(
+                tenant_id=tenant_b, asset_tag="ASSET-ISOLATION-B",
+                name="Ativo privado B", location="Sala B",
+            )
+            db.add_all([history, alarm, asset])
+            db.flush()
+            order = WorkOrderModel(
+                tenant_id=tenant_b, alarm_id=alarm.id, panel_id=panel.id,
+                title="OS privada B", description="Detalhe operacional privado B",
+            )
+            db.add(order)
+            db.flush()
+            checklist_item = WorkOrderChecklistItemModel(
+                tenant_id=tenant_b, work_order_id=order.id,
+                label="Item privado B",
+            )
+            template = WorkOrderChecklistTemplateModel(
+                tenant_id=tenant_b, name="Modelo privado B", items_json='["Passo privado B"]',
+                created_by="admin_ISOLATIONREADB",
+            )
+            plan = MaintenancePlanModel(
+                tenant_id=tenant_b, asset_id=asset.id, title="Plano privado B",
+                next_due_at=datetime(2026, 11, 1),
+            )
+            task = MaintenanceTaskModel(
+                tenant_id=tenant_b, asset_id=asset.id, title="Tarefa privada B",
+                due_at=datetime(2026, 11, 1), notes="Nota privada B",
+            )
+            credential = DeviceCredentialModel(
+                tenant_id=tenant_b, panel_id=panel.id, name="Gateway privado B",
+                token_hash=secrets.token_hex(32),
+            )
+            audit = AuditLogModel(
+                tenant_id=tenant_b, user_name="admin_ISOLATIONREADB", role="CEO",
+                action="TESTE_ISOLAMENTO", details="Auditoria privada B",
+            )
+            inventory = InventoryModel(
+                tenant_id=tenant_b, part_name="Peça privada B", quantity_in_stock=7,
+            )
+            db.add_all([checklist_item, template, plan, task, credential, audit, inventory])
+            db.commit()
+            alarm_id, order_id = alarm.id, order.id
+            checklist_id, template_id = checklist_item.id, template.id
+            asset_id, task_id, credential_id = asset.id, task.id, credential.id
+
+        # Each tenant-scoped collection must omit records owned by tenant B.
+        dashboard = self.client.get("/api/panels", headers=headers_a)
+        self.assertEqual(dashboard.status_code, 200, dashboard.text)
+        self.assertNotIn(foreign_panel_id, dashboard.text)
+        for endpoint, marker in (
+            ("/api/alarms", "Alarme privado da organização B"),
+            ("/api/assets", "Ativo privado B"),
+            ("/api/maintenance/plans", "Plano privado B"),
+            ("/api/maintenance/tasks", "Tarefa privada B"),
+            ("/api/work-order-checklist-templates", "Modelo privado B"),
+            ("/api/devices/credentials", "Gateway privado B"),
+            ("/api/audit-logs", "Auditoria privada B"),
+        ):
+            response = self.client.get(endpoint, headers=headers_a)
+            self.assertEqual(response.status_code, 200, f"{endpoint}: {response.text}")
+            self.assertNotIn(marker, response.text, endpoint)
+        self.assertEqual(
+            self.client.get(f"/api/telemetry/history/{foreign_panel_id}", headers=headers_a).status_code,
+            404,
+        )
+
+        # CEO has the broadest application role; foreign identifiers must still
+        # be indistinguishable from missing records and must remain unchanged.
+        foreign_mutations = (
+            ("post", f"/api/alarms/{alarm_id}/acknowledge", None),
+            ("post", f"/api/alarms/{alarm_id}/work-order", None),
+            ("post", f"/api/alarms/{alarm_id}/clear", None),
+            ("get", f"/api/panels/{foreign_panel_id}/alarm-rules", None),
+            ("put", f"/api/panels/{foreign_panel_id}/alarm-rules", {"max_temperature": 90, "max_current": 600}),
+            ("delete", f"/api/panels/{foreign_panel_id}/alarm-rules", None),
+            ("patch", f"/api/work-orders/{order_id}", {"title": "Tentativa de alteração"}),
+            ("patch", f"/api/work-orders/{order_id}/checklist/{checklist_id}", {"is_completed": True}),
+            ("delete", f"/api/work-order-checklist-templates/{template_id}", None),
+            ("patch", f"/api/assets/{asset_id}", {"notes": "Tentativa de alteração"}),
+            ("patch", f"/api/maintenance/tasks/{task_id}", {"status": "CONCLUIDA"}),
+            ("post", f"/api/devices/credentials/{credential_id}/revoke", None),
+        )
+        for method, endpoint, payload in foreign_mutations:
+            response = self.client.request(method.upper(), endpoint, headers=headers_a, json=payload)
+            self.assertEqual(response.status_code, 404, f"{method.upper()} {endpoint}: {response.text}")
+
+        with SessionLocal() as db:
+            self.assertEqual(db.query(AlarmModel).filter_by(id=alarm_id, tenant_id=tenant_b).one().status, "ACTIVE")
+            self.assertEqual(db.query(WorkOrderModel).filter_by(id=order_id, tenant_id=tenant_b).one().title, "OS privada B")
+            self.assertFalse(db.query(WorkOrderChecklistItemModel).filter_by(id=checklist_id, tenant_id=tenant_b).one().is_completed)
+            self.assertIsNotNone(db.query(WorkOrderChecklistTemplateModel).filter_by(id=template_id, tenant_id=tenant_b).one())
+            self.assertEqual(db.query(AssetModel).filter_by(id=asset_id, tenant_id=tenant_b).one().notes, "")
+            self.assertEqual(db.query(MaintenanceTaskModel).filter_by(id=task_id, tenant_id=tenant_b).one().status, "PENDENTE")
+            self.assertIsNone(db.query(DeviceCredentialModel).filter_by(id=credential_id, tenant_id=tenant_b).one().revoked_at)
+
+    def test_hosted_public_registration_is_closed_by_default(self):
+        with patch.dict(os.environ, {"RENDER": "true"}):
+            os.environ.pop("ALLOW_SELF_SERVICE_REGISTRATION", None)
+            status_response = self.client.get("/api/tenant/registration-status")
+            self.assertEqual(status_response.status_code, 200, status_response.text)
+            self.assertFalse(status_response.json()["self_service_enabled"])
+            response = self.client.post("/api/tenant/register", json={
+                "tenant_id": "PUBLIC-SIGNUP", "username": "admin_publicsignup",
+                "password": "Senha-forte-de-teste-2026!",
+            })
+            self.assertEqual(response.status_code, 403, response.text)
+
+    def test_mfa_enabled_account_requires_second_factor_at_login(self):
+        tenant_id, _ = self.create_tenant("LOGINMFA")
+        username = "admin_LOGINMFA"
+        secret = pyotp.random_base32()
+        recovery_code = "ABCD1234EFGH5678IJKL"
+        with SessionLocal() as db:
+            user = db.query(UserModel).filter(UserModel.username == username,
+                                              UserModel.tenant_id == tenant_id).one()
+            user.totp_enabled = True
+            user.totp_secret_encrypted = encrypt_totp_secret(secret)
+            user.totp_recovery_hashes = json.dumps([hash_recovery_code(recovery_code)])
+            db.commit()
+
+        credentials = {"username": username, "password": "Senha-forte-de-teste-2026!"}
+        missing = self.client.post("/api/token", json=credentials)
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(missing.json()["detail"], "MFA_REQUIRED")
+
+        invalid = self.client.post("/api/token", json={**credentials, "mfa_code": "000000"})
+        self.assertEqual(invalid.status_code, 401)
+        self.assertNotIn("access_token", invalid.json())
+
+        code = pyotp.TOTP(secret).now()
+        valid = self.client.post("/api/token", json={**credentials, "mfa_code": code})
+        self.assertEqual(valid.status_code, 200, valid.text)
+        self.assertTrue(valid.json().get("access_token"))
+
+        replayed = self.client.post("/api/token", json={**credentials, "mfa_code": code})
+        self.assertEqual(replayed.status_code, 401)
+
+        recovery_login = self.client.post("/api/token", json={**credentials, "mfa_code": recovery_code})
+        self.assertEqual(recovery_login.status_code, 200, recovery_login.text)
+        recovery_replay = self.client.post("/api/token", json={**credentials, "mfa_code": recovery_code})
+        self.assertEqual(recovery_replay.status_code, 401)
+
+    def test_websocket_ticket_is_single_use_and_bound_to_live_session(self):
+        _, headers = self.create_tenant("WSTICKET")
+        issued = self.client.post("/api/ws-ticket", headers=headers)
+        self.assertEqual(issued.status_code, 200, issued.text)
+        ticket = issued.json()["ticket"]
+        with SessionLocal() as db:
+            row = db.query(WebSocketTicketModel).filter_by(
+                ticket_hash=hashlib.sha256(ticket.encode()).hexdigest()
+            ).one()
+            self.assertRegex(row.session_token_id_hash, r"^[a-f0-9]{64}$")
+
+        ws_url = f"/ws/panels?ticket={ticket}"
+        ws_headers = {"Origin": "http://localhost", "Host": "localhost"}
+        with self.client.websocket_connect(ws_url, headers=ws_headers):
+            pass
+        with self.assertRaises(WebSocketDisconnect) as reused:
+            with self.client.websocket_connect(ws_url, headers=ws_headers):
+                pass
+        self.assertEqual(reused.exception.code, 1008)
+
+        second_ticket = self.client.post("/api/ws-ticket", headers=headers)
+        self.assertEqual(second_ticket.status_code, 200, second_ticket.text)
+        logout = self.client.post("/api/logout", headers=headers)
+        self.assertEqual(logout.status_code, 200, logout.text)
+        with self.assertRaises(WebSocketDisconnect) as revoked:
+            with self.client.websocket_connect(
+                f"/ws/panels?ticket={second_ticket.json()['ticket']}", headers=ws_headers,
+            ):
+                pass
+        self.assertEqual(revoked.exception.code, 1008)
+
+    def test_sensitive_routes_enforce_role_matrix(self):
+        _, ceo_headers = self.create_tenant("ROLEMATRIX")
+        credentials = {}
+        for username, role in (("manager_rolematrix", "Gerente"), ("tech_rolematrix", "Técnico de Campo")):
+            created = self.client.post("/api/users", headers=ceo_headers, json={
+                "username": username, "password": "Senha-forte-de-teste-2026!", "role": role,
+            })
+            self.assertEqual(created.status_code, 200, created.text)
+            login = self.client.post("/api/token", json={
+                "username": username, "password": "Senha-forte-de-teste-2026!",
+            })
+            self.assertEqual(login.status_code, 200, login.text)
+            credentials[role] = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        manager_headers = credentials["Gerente"]
+        technician_headers = credentials["Técnico de Campo"]
+        self.assertEqual(self.client.get("/api/users", headers=ceo_headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/users", headers=manager_headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/users", headers=technician_headers).status_code, 403)
+
+        self.assertEqual(self.client.get("/api/audit-logs", headers=ceo_headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/audit-logs", headers=manager_headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/audit-logs", headers=technician_headers).status_code, 403)
+
+        self.assertEqual(self.client.get("/api/devices/credentials", headers=ceo_headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/devices/credentials", headers=manager_headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/devices/credentials", headers=technician_headers).status_code, 403)
+
+        self.assertEqual(self.client.get("/api/export/executive-report", headers=ceo_headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/export/executive-report", headers=manager_headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/export/executive-report", headers=technician_headers).status_code, 403)
+
+        panel = self.client.get("/api/panels", headers=ceo_headers).json()["panels"][0]
+        panel_id = panel["id"]
+
+        # CEO-only mutations must reject both lower roles before making changes.
+        ceo_only_mutations = (
+            ("post", "/api/users", {"username": "should_not_be_created", "password": "Senha-forte-de-teste-2026!", "role": "Gerente"}),
+            ("patch", "/api/users/tech_rolematrix", {"is_active": False}),
+            ("post", "/api/users/tech_rolematrix/revoke-sessions", None),
+            ("post", "/api/tenant/webhook", {"webhook_url": ""}),
+            ("post", "/api/tenant/webhook/test", None),
+        )
+        for method, endpoint, payload in ceo_only_mutations:
+            for role, headers in (("Gerente", manager_headers), ("Técnico de Campo", technician_headers)):
+                response = self.client.request(method.upper(), endpoint, headers=headers, json=payload)
+                self.assertEqual(response.status_code, 403, f"{role} {method.upper()} {endpoint}: {response.text}")
+
+        # Organization managers may configure the service; technicians may
+        # perform field work but cannot change tenant/device configuration.
+        manager_writes = (
+            ("post", "/api/tenant/rules", {"max_temperature": 90, "max_current": 600}),
+            ("post", "/api/panels/add", {"id": "ROLE-MATRIX-NEW", "name": "Painel de teste", "location": "Local de teste"}),
+            ("put", f"/api/panels/{panel_id}/alarm-rules", {"max_temperature": 90, "max_current": 600}),
+            ("delete", f"/api/panels/{panel_id}/alarm-rules", None),
+            ("post", "/api/demo/force-failure", {"panel_id": panel_id}),
+            ("post", "/api/inventory/update", {"part_name": "Peça de teste", "quantity_change": 1}),
+            ("post", "/api/work-order-checklist-templates", {"name": "Modelo de teste", "items": ["Verificar item"]}),
+            ("delete", "/api/work-order-checklist-templates/999999", None),
+            ("patch", "/api/assets/999999", {"notes": "Tentativa de edição"}),
+            ("post", "/api/devices/credentials", {"panel_id": panel_id, "name": "Gateway de teste"}),
+            ("post", "/api/devices/credentials/999999/revoke", None),
+        )
+        for method, endpoint, payload in manager_writes:
+            response = self.client.request(method.upper(), endpoint, headers=technician_headers, json=payload)
+            self.assertEqual(response.status_code, 403, f"Técnico {method.upper()} {endpoint}: {response.text}")
+
+        # Verify the allowed edges too: a manager can configure, while a field
+        # technician can create the operational records needed for field work.
+        self.assertEqual(
+            self.client.post("/api/tenant/rules", headers=manager_headers,
+                             json={"max_temperature": 91, "max_current": 610}).status_code,
+            200,
+        )
+        asset = self.client.post("/api/assets", headers=technician_headers, json={
+            "asset_tag": "ROLE-TECH-ASSET", "name": "Ativo do técnico", "panel_id": panel_id,
+        })
+        self.assertEqual(asset.status_code, 201, asset.text)
+        work_order = self.client.post("/api/work-orders", headers=technician_headers, json={
+            "panel_id": panel_id, "title": "OS do técnico",
+        })
+        self.assertEqual(work_order.status_code, 201, work_order.text)
+
+        with SessionLocal() as db:
+            self.assertIsNone(db.query(UserModel).filter_by(username="should_not_be_created").first())
+            technician = db.query(UserModel).filter_by(username="tech_rolematrix").one()
+            self.assertTrue(technician.is_active)
+
+    def test_every_api_route_requires_user_or_explicit_machine_authentication(self):
+        intentionally_public = {
+            "/api/token",  # Credentials are validated by the login endpoint.
+            "/api/tenant/registration-status",  # Exposes only signup availability.
+            "/api/tenant/register",  # Fail-closed unless explicitly enabled.
+            "/api/device/telemetry",  # Requires a dedicated per-device bearer token.
+        }
+        unprotected = []
+        for route in app.routes:
+            path = getattr(route, "path", "")
+            if not path.startswith("/api/") or path in intentionally_public:
+                continue
+            dependencies = list(getattr(getattr(route, "dependant", None), "dependencies", []))
+            requires_user = False
+            while dependencies:
+                dependency = dependencies.pop()
+                if dependency.call is get_current_user:
+                    requires_user = True
+                    break
+                dependencies.extend(dependency.dependencies)
+            if not requires_user:
+                unprotected.append(path)
+        self.assertEqual(unprotected, [], f"API routes lack server-side user auth: {unprotected}")
+
+    def test_new_panel_waits_for_real_telemetry(self):
+        _, headers = self.create_tenant("NEWPANEL")
+        created = self.client.post("/api/panels/add", headers=headers, json={
+            "id": "NEW-PANEL-01", "name": "Painel recém-cadastrado",
+            "location": "Sala elétrica", "voltage": "380 V AC",
+            "gateway_qr": "QR-NEW-PANEL-01",
+        })
+        self.assertEqual(created.status_code, 200, created.text)
+
+        panel_response = self.client.get("/api/panels", headers=headers)
+        panel = next(p for p in panel_response.json()["panels"] if p["id"] == "NEW-PANEL-01")
+        self.assertEqual(panel["status"], "SEM_DADOS")
+        self.assertFalse(panel["data_available"])
+        self.assertFalse(panel["temperature_measured"])
+        self.assertEqual(panel["current"], 0)
+        self.assertEqual(panel["temperature"], 0)
+        self.assertEqual(panel["connectivity_status"], "NOT_CONFIGURED")
+        history = self.client.get("/api/telemetry/history/NEW-PANEL-01", headers=headers)
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(history.json()["count"], 0)
+
+        first_reading = self.client.post("/api/telemetry", headers=headers, json={
+            "panel_id": "NEW-PANEL-01", "temperature": 32.5,
+            "current": 12.0, "voltage": "381.2 V",
+        })
+        self.assertEqual(first_reading.status_code, 200, first_reading.text)
+        updated = self.client.get("/api/panels", headers=headers).json()
+        panel_after_reading = next(p for p in updated["panels"] if p["id"] == "NEW-PANEL-01")
+        self.assertEqual(panel_after_reading["status"], "NORMAL")
+        self.assertTrue(panel_after_reading["data_available"])
+        self.assertTrue(panel_after_reading["temperature_measured"])
+        self.assertEqual(panel_after_reading["current"], 12.0)
+        self.assertEqual(panel_after_reading["temperature"], 32.5)
+
+    def test_partial_device_reading_is_not_reported_as_normal(self):
+        _, headers = self.create_tenant("PARTIAL")
+        self.client.post("/api/panels/add", headers=headers, json={
+            "id": "PARTIAL-PANEL", "name": "Painel parcial",
+            "location": "Sala elétrica", "voltage": "380 V AC",
+        })
+        credential = self.client.post("/api/devices/credentials", headers=headers, json={
+            "panel_id": "PARTIAL-PANEL", "name": "Gateway parcial",
+        })
+        self.assertEqual(credential.status_code, 201, credential.text)
+        partial = self.client.post("/api/device/telemetry", headers={
+            "Authorization": f"Bearer {credential.json()['device_token']}"
+        }, json={"panel_id": "PARTIAL-PANEL", "voltage_v": 381.2})
+        self.assertEqual(partial.status_code, 200, partial.text)
+
+        panel = next(p for p in self.client.get("/api/panels", headers=headers).json()["panels"]
+                     if p["id"] == "PARTIAL-PANEL")
+        self.assertEqual(panel["status"], "PARCIAL")
+        self.assertTrue(panel["data_available"])
+        self.assertFalse(panel["temperature_has_reading"])
+        self.assertFalse(panel["temperature_measured"])
+        self.assertFalse(panel["current_has_reading"])
+        self.assertFalse(panel["current_measured"])
+        self.assertTrue(panel["voltage_has_reading"])
+        self.assertTrue(panel["voltage_measured"])
 
     def test_inventory_cannot_become_negative(self):
         _, headers = self.create_tenant("STOCK")

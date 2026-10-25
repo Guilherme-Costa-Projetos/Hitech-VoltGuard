@@ -1,4 +1,4 @@
-# Revisão técnica — HITECH VoltGuard SCADA Enterprise
+# Revisão técnica — HITECH VoltGuard
 
 ## Escopo e conclusão
 
@@ -6,15 +6,16 @@ Esta entrega organiza e endurece o MVP para **demonstração/homologação contr
 
 ## Melhorias aplicadas nesta revisão
 
+- v0.65.0: limite de corpo aplicado durante o recebimento (1 MiB para API e 16 KiB para telemetria, inclusive sem `Content-Length`); no Render, limitador usa `CF-Connecting-IP`, Uvicorn não confia genericamente em cabeçalhos proxy e o Host é restrito; expiração da assinatura calculada em cada inserção; timestamps UTC atualizados; dependências elevadas para versões com patches de segurança conhecidos. A suíte passou com 18 testes. Pendências de segurança e validação operacional estão em `SECURITY_REVIEW.md`.
 - v0.64.0: a API exige CEO para exportar o relatório executivo e CEO/Gerente para consultar credenciais de dispositivos, alinhando a autorização do backend à interface e mantendo os dados limitados ao tenant autenticado.
 - Operação do banco: documentado o fluxo de exportação e recuperação do PostgreSQL em instância separada, incluindo os limites do plano Free e a preservação de `SECRET_KEY`. O procedimento ainda precisa ser executado e a restauração validada pelo responsável do ambiente.
 - v0.63.2: o Dockerfile instala explicitamente PyOTP, qrcode/Pillow e cryptography, e valida as importações durante o build.
 - v0.63.1: instalação explícita do PyOTP no Docker e verificação de importação de PyOTP, qrcode e cryptography durante o build.
-- v0.63.0: MFA é usado somente como confirmação adicional para troca de senha; o login normal requer apenas usuário e senha. A troca de senha verifica TOTP ou código de recuperação de uso único. A URI do QR contém um único rótulo de conta, sem parâmetro de emissor repetido.
+- v0.63.0: contas com MFA ativo precisam de TOTP ou código de recuperação de uso único tanto no login quanto na troca de senha; todos os perfis podem ativar MFA. A URI do QR contém um único rótulo de conta, sem parâmetro de emissor repetido.
 - v0.62.3: o primeiro enrollment MFA exige nova senha após validar o TOTP. Um desafio aleatório, com hash no banco, expira em 10 minutos e é consumido atomicamente; MFA e códigos de recuperação só são ativados após a troca de senha. Outras sessões são revogadas.
 - v0.62.2: configuração MFA exibe QR Code gerado localmente com a URI TOTP; permanece disponível a chave manual e nenhuma API externa recebe o segredo.
 - v0.62.1: o polling de telemetria não reconstrói a aba Minha conta nem consulta novamente o estado MFA a cada três segundos.
-- v0.62.0: CEO e Gerente podem ativar MFA TOTP; segredo cifrado em repouso, reautenticação ao alterar a configuração, rejeição atômica de códigos TOTP já usados e 10 códigos de recuperação aleatórios de uso único. Migração compatível adiciona campos opcionais em `users`. MFA fica desativado até adesão explícita nesta versão.
+- v0.62.0: qualquer perfil pode ativar MFA TOTP; segredo cifrado em repouso, reautenticação ao alterar a configuração, rejeição atômica de códigos TOTP já usados e 10 códigos de recuperação aleatórios de uso único. Migração compatível adiciona campos opcionais em `users`. MFA fica desativado até adesão explícita nesta versão.
 - v0.61.0: rate limiting pode usar Redis/Redis TLS por `RATE_LIMIT_STORAGE_URI`; fallback em memória preserva disponibilidade se Redis falhar, mas não oferece contagem global enquanto o armazenamento compartilhado estiver fora do ar. A variável é opcional; sem Redis, o comportamento permanece por processo.
 - v0.60.0: o login executa scrypt mesmo quando o nome de usuário não existe ou a conta ainda usa hash SHA-256 legado, reduzindo diferenças de tempo que poderiam facilitar enumeração de contas. A resposta de erro permanece genérica e nenhuma migração de banco é necessária.
 - v0.59.1: a página inicial envia `Cache-Control: no-store` para evitar HTML antigo em cache após deploy; o pacote mantém referências às bibliotecas JavaScript locais de `vendor/`.
@@ -56,7 +57,7 @@ Esta entrega organiza e endurece o MVP para **demonstração/homologação contr
 1. Realizar revisão de segurança independente e teste de penetração.
 2. Revisar os pontos de inserção via `innerHTML`; preferir `textContent`, criação de nós DOM e escape contextual para dados variáveis.
 3. A CSP ativa já limita scripts à própria origem. Antes de remover `unsafe-inline` de estilos, validar em navegador o leitor QR e o relatório de OS; a política Report-Only ajuda a localizar violações.
-4. MFA TOTP para CEO/Gerente está disponível por adesão; antes de exigir MFA para todas as contas administrativas, definir recuperação de conta e processo de suporte. Recuperação de senha por e-mail e alertas de atividade continuam pendentes.
+4. MFA TOTP está disponível a qualquer perfil e, quando ativado, é obrigatório no login e na troca de senha. Recuperação de conta, recuperação de senha por e-mail e alertas de atividade continuam pendentes; antes de impor MFA por política, definir também o processo de suporte.
 5. Provisionar Redis gerenciado e configurar `RATE_LIMIT_STORAGE_URI` como segredo no Render antes de escalar para múltiplas instâncias; o fallback em memória não mantém limites globais durante falhas do Redis.
 6. Limitar conexões WebSocket, acompanhar falhas de autenticação e considerar um transporte de credencial fora da URL para ambientes de produção.
 7. O webhook agora fixa o IP público validado por envio para mitigar DNS rebinding/TOCTOU. Antes de produção, ainda usar política de saída de rede, limitar destinos, executar envios num worker isolado e definir logs/retries controlados.
@@ -78,7 +79,7 @@ Esta entrega organiza e endurece o MVP para **demonstração/homologação contr
 ### Controles implementados na versão 0.44.0
 
 - A ingestão de dispositivo limita 600 requisições por minuto por endereço IP usando SlowAPI.
-- A rota recusa requisições que declarem `Content-Length` maior que 16 KB antes do processamento do corpo.
+- A API limita os corpos a 1 MiB e a ingestão de telemetria a 16 KB durante a leitura, inclusive sem `Content-Length`.
 - O modelo de telemetria rejeita campos desconhecidos e limita os tamanhos de `panel_id`, `voltage` e `gateway_qr`.
 - O rate limiting usa memória por processo quando `RATE_LIMIT_STORAGE_URI` não está configurada. Com Redis configurado, os contadores são compartilhados entre instâncias; se Redis ficar indisponível, há fallback em memória e a contagem deixa de ser global até a recuperação.
 

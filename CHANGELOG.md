@@ -1,10 +1,57 @@
 # Changelog
 
+## CI e adaptador de testes — 25/10/2026
+
+- Adicionada dependência `httpx2` somente ao conjunto de teste para acompanhar a migração recomendada pelo Starlette; a dependência `httpx` usada pelo gateway continua no ambiente de produção.
+- CI instala `requirements-test.txt`, audita também as dependências de teste com `pip-audit` e continua construindo a imagem Docker apenas com `requirements.txt`.
+- As instruções locais de teste e checklist de implantação distinguem dependências de teste das dependências da aplicação.
+
+## Preparação de piloto comercial — 23/10/2026
+
+- CI inclui verificação semanal e em cada push/PR do histórico Git alcançável com Gitleaks fixado; os resultados são redigidos e a permissão do job é somente leitura.
+- Actions de checkout e Python atualizadas para versões Node 24 e fixadas por SHA.
+- MFA passou a ser exigido no login quando ativado e pode ser configurado por todos os perfis; códigos de recuperação são aceitos nos campos móveis.
+- Cadastro público fica desativado por padrão no Render; um comando separado provisiona a primeira organização somente em banco sem registros e exige confirmação explícita.
+- O comando exige um terminal interativo para receber a senha sem eco, verifica todas as tabelas antes e depois da inicialização do esquema e é testado contra bancos temporários.
+- Textos da interface foram alinhados ao escopo real de monitoramento e manutenção; não apresentam o produto como SCADA ou sistema de proteção certificado.
+- Testes adicionais cobrem permissões CEO/Gerente/Técnico nas rotas de usuários, auditoria, credenciais e relatórios, além de inventariar autenticação em todas as rotas de API.
+- Incluída matriz brasileira de prontidão com LGPD, NR-10, INMETRO, privacidade, recuperação de conta, cobrança, persistência, backup e homologação de hardware.
+- Esta atualização não altera dados, segredos, recursos Render, infraestrutura ou cadastro do banco.
+
+## v0.66.0 — Integridade e completude das leituras
+
+- Painéis cadastrados manualmente começam como `SEM_DADOS`; o cadastro não inventa valores nem grava telemetria inicial.
+- Leituras parciais do gateway passam a indicar `PARCIAL`; o sistema não afirma operação normal sem temperatura e corrente para avaliar alarmes.
+- API distingue a última grandeza recebida das leituras preservadas e não registra tensão de referência como telemetria quando o campo não foi enviado.
+- Telas de tempo real e consulta por QR mostram “Sem leitura” antes da primeira amostra e distinguem tensão configurada de tensão medida.
+- Consultas de histórico e credenciais foram agrupadas para evitar consultas por painel a cada atualização do dashboard.
+- Testes de integração cobrem cadastro sem amostra, primeira leitura e amostra incompleta.
+
+## v0.65.0 — Hardening e correções de validação
+
+- Limites de corpo em streaming: 1 MiB para rotas da API e 16 KiB para ingestão de telemetria, incluindo pedidos sem `Content-Length`.
+- No Render, rate limits usam `CF-Connecting-IP`, Uvicorn não confia genericamente em proxy headers e `Host` fica restrito ao hostname de serviço e `ALLOWED_HOSTS`.
+- Data de expiração de assinatura calculada por inserção; UTC usa função compatível com as versões atuais do Python.
+- Limiares mínimos das dependências elevadas para corrigir advisories conhecidos de Starlette, PyJWT, python-multipart e cryptography.
+- Testes isolam o rate limit por IP de cliente e cobrem corpo chunked acima do limite.
+- Revisão e pendências documentadas em `SECURITY_REVIEW.md`.
+
+## Empacotamento reproduzível do backend e gateway
+
+- Dependências de MFA (PyOTP, QR Code e cryptography) e do gateway Modbus agora estão declaradas em `requirements.txt`, compartilhado por instalação local e Docker.
+- O build Docker mantém uma verificação de importação para falhar durante o build quando alguma dependência necessária estiver ausente.
+
 ## Operação do banco — backup e recuperação
 
 - Adicionado `DATABASE_OPERATIONS.md` com procedimento para exportar, recuperar e validar o PostgreSQL sem substituir o banco ativo antes da verificação.
 - Checklist de piloto agora exige validar a restauração em uma instância separada.
 - Nenhuma alteração no esquema ou na inicialização do banco foi feita nesta etapa.
+
+## Em desenvolvimento — indicadores operacionais baseados nos dados da organização
+
+O cabeçalho do painel deixa de exibir risco, disponibilidade, downtime, MTTR e ESG com valores fixos de demonstração. Agora mostra somente contagens recebidas da API: painéis cadastrados, painéis com telemetria recente, alarmes ativos/reconhecidos e ordens de serviço em aberto. Os cartões são atualizados junto com o polling do painel.
+
+A inicialização no Render agora falha se `DATABASE_URL` estiver ausente ou apontar para SQLite, evitando que a aplicação trate o sistema de arquivos descartável como banco de produção.
 
 ## v0.64.0 — Permissões do relatório executivo e credenciais
 
@@ -488,3 +535,5 @@ Consulte `REVISAO_TECNICA.md`. A aplicação permanece candidata a demonstraçã
 - Endereços Modbus permanecem sem preencher até validação do mapa do modelo e firmware reais.
 - Sem validação física, buffer offline ou uso operacional; ver `gateway/README.md`.
 
+
+- Removido do controle de versão um bytecode Python gerado localmente; o .gitignore já exclui arquivos .pyc futuros.

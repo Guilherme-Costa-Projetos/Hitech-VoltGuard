@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>HITECH VoltGuard - SCADA Enterprise SaaS</title>
+    <title>HITECH VoltGuard | Monitoramento elétrico e manutenção</title>
     <script src="/vendor/html5-qrcode.min.js"></script>
     <script src="/vendor/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
-    <!-- ECRÃ DE LOGIN OBRIGATÓRIO (PROTEÇÃO DE DADOS / LGPD/GDPR) -->
+    <!-- Área de autenticação da aplicação -->
     <div id="login-screen">
         <h2>HITECH VoltGuard</h2>
-        <p class="sub">SCADA Enterprise SaaS</p>
+        <p class="sub">Monitoramento elétrico e gestão da manutenção</p>
         <div class="input-group"><label>Usuário</label><input type="text" id="usuario" autocomplete="username" placeholder="Seu usuário" required></div>
         <div class="input-group"><label>Senha</label><input type="password" id="senha" autocomplete="current-password" placeholder="Sua senha" required></div>
+        <div class="input-group is-hidden" id="mfa-login-group"><label for="mfa-login-code">Código do autenticador ou de recuperação</label><input type="text" id="mfa-login-code" autocomplete="one-time-code" maxlength="23" placeholder="Código de autenticação"></div>
         <button type="button" class="btn-primary" data-action="login">Acessar Plataforma</button>
-        <button type="button" class="link-toggle" data-action="show-register">Registar Nova Empresa (Tenant)</button>
+        <button type="button" class="link-toggle is-hidden" id="show-register-button" data-action="show-register">Registar Nova Empresa (Tenant)</button>
+        <p class="sub is-hidden" id="registration-unavailable" role="status" aria-live="polite">O cadastro está fechado para este piloto. Solicite acesso à equipe que forneceu a demonstração.</p>
         <div id="error-msg"></div>
     </div>
 
@@ -37,7 +39,7 @@
     <div id="dashboard-screen" class="is-hidden">
         <div class="dash-header">
             <div>
-                <h1>HITECH VoltGuard SCADA Enterprise</h1>
+                <h1>HITECH VoltGuard</h1>
                 <span>Plataforma SaaS de demonstração • dados simulados • somente monitoramento</span>
             </div>
             <div class="user-info">

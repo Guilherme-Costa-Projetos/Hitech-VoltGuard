@@ -1,5 +1,7 @@
 # HITECH VoltGuard SCADA Enterprise — pacote para Render
 
+> **ARQUIVO HISTÓRICO — NÃO É A VERSÃO ATUAL.** Esta pasta preserva uma cópia antiga de referência, com fluxos, configuração e instruções desatualizados. O código mantido e implantado está na raiz do repositório. Consulte o `README.md`, `SECURITY_REVIEW.md` e `PRONTIDAO_COMERCIAL_BR.md` da raiz; não implante esta subpasta.
+
 Versão revisada para **demonstração e homologação controlada**. Este pacote não é SCADA industrial certificado e não deve ser conectado a funções de proteção, intertravamento ou comando de equipamentos elétricos.
 
 ## Conteúdo do pacote

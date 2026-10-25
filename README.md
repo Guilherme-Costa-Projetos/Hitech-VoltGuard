@@ -1,4 +1,16 @@
-# HITECH VoltGuard SCADA Enterprise — pacote para Render
+# HITECH VoltGuard — monitoramento elétrico e gestão da manutenção
+
+> **Estado do produto:** piloto técnico demonstrativo; não é SCADA certificado nem sistema de proteção, comando ou intertravamento. Use dados fictícios até que persistência, restauração, privacidade, suporte e validação de hardware estejam aprovados. O cadastro público está fechado por padrão no Render.
+
+Leia [`PRONTIDAO_COMERCIAL_BR.md`](PRONTIDAO_COMERCIAL_BR.md) para os critérios de liberação do piloto comercial e decisões que dependem da empresa.
+
+## v0.66.0 — Integridade e completude das leituras
+
+Um painel recém-cadastrado aguarda a primeira amostra sem gerar corrente, temperatura ou histórico fictício. A interface distingue tensão de referência de medição e identifica grandezas nunca recebidas. Se uma amostra não trouxer temperatura ou corrente, o estado será `PARCIAL`, sem afirmar operação normal até que ambos os limites de alarme possam ser avaliados. Painéis explicitamente marcados como demonstração continuam usando dados simulados.
+
+## v0.65.0 — Limites de requisição, prazos e dependências
+
+Os corpos de `/api/*` agora têm limite durante a leitura, inclusive em requisições transmitidas em blocos sem `Content-Length`: 1 MiB para a API e 16 KiB para telemetria. No Render, o limitador usa o IP enviado pela Cloudflare, o Docker não confia genericamente em cabeçalhos de proxy e o Host é validado. A validade da assinatura é calculada por organização no momento do cadastro. Dependências críticas foram elevadas para versões com correções de segurança conhecidas; veja [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) para o resultado da revisão e as pendências antes de dados reais.
 
 ## v0.64.0 — Permissões do relatório executivo e credenciais
 
@@ -12,25 +24,25 @@ O Dockerfile instala diretamente PyOTP, qrcode com Pillow e cryptography, além 
 
 O build Docker instala PyOTP explicitamente e confirma que PyOTP, qrcode e cryptography podem ser importados antes de criar a imagem final. Se faltar alguma biblioteca, o deploy para no build com o erro de dependência, sem iniciar uma versão quebrada.
 
-## v0.63.0 — MFA exclusivo para troca de senha
+## v0.63.0 — MFA no login e nas operações de senha
 
-O login normal usa somente usuário e senha. Quando MFA estiver ativo, a troca da senha exige também um código temporário do autenticador ou um código de recuperação de uso único. O QR apresenta uma única identificação para reduzir a possibilidade de leitores criarem duas entradas para a mesma configuração. O código MFA não é solicitado ao entrar no painel.
+Quando MFA estiver ativo, o login e a troca de senha exigem também um código do autenticador ou um código de recuperação de uso único. O MFA pode ser ativado por qualquer perfil em **Minha conta**. O QR apresenta uma única identificação para reduzir a possibilidade de leitores criarem duas entradas para a mesma configuração. Códigos TOTP já usados não podem ser reutilizados.
 
 ## v0.62.3 — Senha nova como etapa da ativação MFA
 
-Na primeira ativação do MFA, o fluxo é: informar a senha atual para iniciar, escanear o QR, digitar o código TOTP, escolher e confirmar uma nova senha e guardar os códigos de recuperação. A senha nova deve ter pelo menos 12 caracteres. Após confirmar que guardou os códigos, a sessão é encerrada e o próximo login usa a senha nova. Em logins seguintes, o autenticador não é solicitado; ele será usado somente para autorizar uma troca de senha.
+Na primeira ativação do MFA, o fluxo é: informar a senha atual para iniciar, escanear o QR, digitar o código TOTP, escolher e confirmar uma nova senha e guardar os códigos de recuperação. A senha nova deve ter pelo menos 12 caracteres. Após confirmar que guardou os códigos, a sessão é encerrada. Nos próximos logins e nas trocas de senha, será pedido um código TOTP ou de recuperação.
 
 ## v0.62.2 — QR Code para aplicativo autenticador
 
-Ao configurar MFA em **Minha conta**, o CEO ou Gerente pode escanear um QR Code com o Microsoft Authenticator ou outro aplicativo TOTP. O QR é gerado localmente no backend e enviado apenas na resposta autenticada da configuração; a chave manual continua disponível como alternativa.
+Ao configurar MFA em **Minha conta**, qualquer perfil pode escanear um QR Code com o Microsoft Authenticator ou outro aplicativo TOTP. O QR é gerado localmente no backend e enviado apenas na resposta autenticada da configuração; a chave manual continua disponível como alternativa.
 
 ## v0.62.1 — Estabilidade da tela Minha conta
 
 A atualização periódica dos painéis não redesenha mais a aba **Minha conta**. Isso evita recarregar o estado do MFA e mantém estáveis os formulários enquanto a aba permanece aberta.
 
-## v0.62.0 — Autenticação em dois fatores para administradores
+## v0.62.0 — Autenticação em dois fatores para contas
 
-Perfis CEO e Gerente podem ativar MFA TOTP em **Minha conta** usando aplicativo autenticador compatível. O login normal exige somente a senha. Ao alterar a senha, contas com MFA ativo precisam também informar um código TOTP de 6 dígitos; cada janela TOTP só pode ser aceita uma vez. Dez códigos de recuperação de uso único são exibidos uma única vez ao concluir a configuração. Guarde-os em local seguro.
+Todos os perfis podem ativar MFA TOTP em **Minha conta** usando aplicativo autenticador compatível. Quando ativo, o login e a alteração de senha exigem um código TOTP de 6 dígitos ou um código de recuperação; cada janela TOTP só pode ser aceita uma vez. Dez códigos de recuperação de uso único são exibidos uma única vez ao concluir a configuração. Guarde-os em local seguro.
 
 Os segredos TOTP são criptografados no banco com uma chave derivada de `SECRET_KEY`. Mantenha essa variável estável e faça backup seguro; se ela for trocada, usuários com MFA ativo precisarão reconfigurar o autenticador. A migração é automática e não ativa MFA nas contas existentes. A ativação é voluntária nesta versão.
 
@@ -60,7 +72,7 @@ Todos os usuários autenticados podem abrir **Minha conta** e trocar a própria 
 
 ## v0.56.0 — Gestão de usuários e perfis por organização
 
-O CEO pode abrir **Usuários**, listar contas da própria organização, criar contas de Gerente e Técnico de Campo, alterar o perfil e desativar/reativar uma conta. A conta CEO e a própria sessão do CEO não podem ser alteradas nessa tela. A desativação encerra as sessões ativas e impede novos logins. O backend valida novamente o papel e o tenant em cada chamada; a interface não é a barreira de segurança. O banco adiciona `users.is_active` com migração compatível; contas existentes são mantidas ativas. A entrega da senha inicial deve ocorrer por canal seguro; CEO e Gerente podem ativar MFA TOTP em **Minha conta**.
+O CEO pode abrir **Usuários**, listar contas da própria organização, criar contas de Gerente e Técnico de Campo, alterar o perfil e desativar/reativar uma conta. A conta CEO e a própria sessão do CEO não podem ser alteradas nessa tela. A desativação encerra as sessões ativas e impede novos logins. O backend valida novamente o papel e o tenant em cada chamada; a interface não é a barreira de segurança. O banco adiciona `users.is_active` com migração compatível; contas existentes são mantidas ativas. A entrega da senha inicial deve ocorrer por canal seguro; todos os perfis podem ativar MFA em **Minha conta**.
 
 O `render.yaml` agora declara `runtime: docker` e aponta explicitamente para `./Dockerfile` e para o contexto raiz, em linha com a configuração do serviço Render.
 
@@ -114,7 +126,7 @@ O script principal da interface foi separado em `app.js`, servido em `/app.js` s
 
 ## v0.44.0 — Limites básicos para ingestão de telemetria
 
-A rota de telemetria limita cada IP a 600 requisições por minuto e recusa corpos com `Content-Length` acima de 16 KB. O payload rejeita campos desconhecidos e restringe o tamanho dos identificadores e da tensão textual. Sem Redis, os limites ficam em memória por processo; com `RATE_LIMIT_STORAGE_URI`, os contadores são compartilhados entre instâncias. A política por credencial no proxy/WAF continua pendente.
+A rota de telemetria limita cada IP a 600 requisições por minuto e o backend limita o corpo a 16 KB durante a leitura, mesmo sem `Content-Length`. As demais rotas da API aceitam até 1 MiB por requisição. O payload rejeita campos desconhecidos e restringe o tamanho dos identificadores e da tensão textual. Sem Redis, os limites ficam em memória por processo; com `RATE_LIMIT_STORAGE_URI`, os contadores são compartilhados entre instâncias. A política por credencial no proxy/WAF continua pendente.
 
 ## v0.43.0 — Revogação de sessão no logout
 
@@ -346,18 +358,30 @@ curl -X POST "https://SEU-SERVICO.onrender.com/api/device/telemetry" \
 3. A resposta deve conter `status: success` e listar `measurements_received`. Consulte o painel e o histórico para confirmar as grandezas recebidas. Alarmes de temperatura e corrente só são avaliados quando a leitura inclui o respectivo campo; a ausência de uma medição não limpa um alarme existente.
 4. Em **Dispositivos**, confirme que “Último uso” foi atualizado. Revogue a credencial e repita a chamada: a API deve responder `401`.
 
-Validações locais nesta versão: 11 testes automatizados aprovados. O teste foi executado com um stub de `slowapi` porque essa dependência não estava disponível no ambiente local; portanto, o rate limiting deve ser confirmado com as dependências completas no Render. A atualização não foi publicada automaticamente no serviço do usuário.
+Validação local registrada: 31 testes aprovados com `requirements-test.txt`, cobrindo rate limiting, MFA, isolamento entre organizações, autenticação em todas as rotas da API, matriz básica de perfis e recusas seguras do comando de bootstrap. O caminho de criação do bootstrap também foi exercitado manualmente em um SQLite temporário vazio. A CI do GitHub valida segredos no histórico, dependências, sintaxe, testes e build Docker.
 
 ## Publicação recomendada no Render
+
+**Use este procedimento somente em um workspace/projeto novo e sem recursos ou dados. Não reaplique o `render.yaml` ao piloto atual:** o serviço ativo tem nome/branch próprios, o PostgreSQL já contém registros e está em PostgreSQL 18, enquanto o Blueprint solicita PostgreSQL 16. Uma nova aplicação ou sincronização do Blueprint pode criar recursos paralelos ou alterar a associação de banco. Preserve os recursos existentes e siga `DEPLOYMENT_CHECKLIST.md` e `DATABASE_OPERATIONS.md` antes de qualquer mudança.
 
 1. Extraia o ZIP e confirme que `main.py`, `index.html`, `requirements.txt`, `Dockerfile` e `render.yaml` estão na raiz do repositório.
 2. Crie um repositório **privado** no GitHub e envie o conteúdo da pasta do projeto. Não envie `.env`, bancos locais ou segredos.
 3. No Render, escolha **New + → Blueprint** e conecte o repositório.
 4. Revise os recursos e variáveis definidos pelo `render.yaml` antes de aplicar.
 5. Aguarde o deploy e verifique `https://SEU-SERVICO.onrender.com/health`. A resposta esperada contém `"status":"ok"`.
-6. Abra a página inicial, selecione **Registar Nova Empresa**, crie uma organização, um usuário e uma senha com pelo menos 12 caracteres; depois faça login.
-7. Confira que os três painéis criados para a organização estão identificados como demonstração. Não são leituras de medidores físicos.
-8. Teste o acesso às abas, a criação de ordens de serviço, a exportação CSV, as regras e o inventário.
+6. No piloto Render, entre com a conta de teste já provisionada. O cadastro público permanece desativado. Para uma instalação nova, o comando de bootstrap abaixo cria a primeira organização somente após confirmar que o banco está vazio.
+7. Confira que os painéis demonstrativos estão identificados como simulação. Não são leituras de medidores físicos.
+8. Teste o acesso às abas, a criação de ordens de serviço, a exportação CSV, as regras e o inventário usando somente dados fictícios.
+
+### Provisionar a primeira organização em um banco vazio
+
+O cadastro pela internet permanece fechado por padrão. Para inicializar **uma instalação nova, sem nenhum registro**, pare o serviço web, execute o comando abaixo em um ambiente com acesso ao banco e com `DATABASE_URL` e a mesma `SECRET_KEY` estável configuradas. O comando exige confirmação digitada e senha oculta; ele cria a conta CEO inicial e os dados de demonstração pela mesma validação usada pela aplicação.
+
+```powershell
+python scripts/provision_first_tenant.py --tenant-id SUA-ORGANIZACAO --username seu.usuario
+```
+
+O script verifica todas as tabelas antes de começar e aborta se qualquer uma contiver dados. Não use no banco do piloto atual nem em uma base com dados a preservar. Após a criação, inicie o serviço, entre com a conta informada e ative MFA; mantenha o auto-cadastro público desligado. O comando não altera as variáveis de ambiente persistentes do Render. Faça um backup antes de qualquer operação administrativa no banco. **O Render Free não oferece Shell/SSH** ([limitações oficiais](https://render.com/docs/ssh)); portanto, a execução deve ser feita de um ambiente administrativo seguro com conectividade ao banco já aprovada. Não amplie regras de rede para abrir o banco à internet como atalho. Se não houver acesso seguro, não execute o provisionamento no Render Free.
 
 ## Configuração do serviço
 
@@ -373,7 +397,7 @@ Se configurar o serviço manualmente, use:
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/health`
-- Configure `SECRET_KEY` com pelo menos 32 caracteres aleatórios e `DATABASE_URL` com a URL interna do PostgreSQL. Não existe usuário/senha predefinido; cadastre a primeira organização pela interface.
+- Configure `SECRET_KEY` com pelo menos 32 caracteres aleatórios e `DATABASE_URL` com a URL interna do PostgreSQL. Não existe usuário/senha predefinido; o cadastro público é fechado. Para uma instalação nova sem registros, use o provisionamento inicial controlado documentado acima. Recuperação de conta e onboarding de clientes continuam pendentes antes da produção.
 
 Não comite valores reais de `SECRET_KEY` nem URLs de banco com credenciais.
 
@@ -387,7 +411,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 # Linux/macOS:
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-test.txt
 python -m unittest discover -s tests -v
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```
@@ -405,7 +429,7 @@ Consulte [DATABASE_OPERATIONS.md](DATABASE_OPERATIONS.md) para criar uma exporta
 - A telemetria da API é autenticada com token de usuário; **ainda não existe uma identidade/credencial dedicada por dispositivo industrial**.
 - Não há driver pronto de PLC/medidor (Modbus/OPC UA), gateway de aquisição ou garantia de tempo real industrial.
 - O WebSocket autentica com ticket opaco, de uso único e validade de 30 segundos. A conexão ainda precisa de limites e monitoramento antes de produção.
-- Alguns KPIs, previsão de falhas e valores ESG são demonstrativos/estimativas e não constituem predição validada ou medição real.
+- KPIs preditivos e valores ESG são demonstrativos/estimativas e não constituem predição validada, medição real ou promessa de economia.
 - A assinatura representa metadados; não há integração de cobrança, pagamentos, inadimplência ou cancelamento.
 - IDs de painéis permanecem globalmente únicos no modelo atual. A coluna `tenant_id` e os filtros de acesso protegem as consultas, mas permitir IDs iguais entre organizações requer migração de chave e revisão dos relacionamentos.
 - O limitador de requisições usa memória por processo por padrão; configure Redis via `RATE_LIMIT_STORAGE_URI` antes de escalar para múltiplas instâncias.
@@ -415,7 +439,7 @@ Leia `REVISAO_TECNICA.md` antes de usar dados reais.
 ### Gestão de usuários (v0.58.0)
 A aba **Usuários** aparece somente para CEO. Permite criar usuários com perfil Gerente ou Técnico de Campo, alterar seus perfis, desativar/reativar contas e encerrar as sessões de outros usuários ativos do mesmo tenant. A API protege todas as contas CEO e impede que o CEO altere ou encerre a própria conta por estas ações. Desativar uma conta impede novos logins e revoga sessões existentes; mudar um perfil também revoga sessões para exigir novo login. Ações são registradas na auditoria.
 
-Endpoints: `GET /api/users`, `POST /api/users` com `{ "username", "password", "role" }`, `PATCH /api/users/{username}` com `role` e/ou `is_active`, e `POST /api/users/{username}/revoke-sessions`. Apenas o backend concede acesso. Senhas devem ter pelo menos 12 caracteres e são armazenadas com scrypt. O endpoint `POST /api/account/password` exige senha atual e nova senha e encerra todas as sessões após a alteração. MFA TOTP está disponível por adesão para CEO e Gerente; recuperação de senha ainda não está disponível.
+Endpoints: `GET /api/users`, `POST /api/users` com `{ "username", "password", "role" }`, `PATCH /api/users/{username}` com `role` e/ou `is_active`, e `POST /api/users/{username}/revoke-sessions`. Apenas o backend concede acesso. Senhas devem ter pelo menos 12 caracteres e são armazenadas com scrypt. O endpoint `POST /api/account/password` exige senha atual e nova senha e encerra todas as sessões após a alteração; contas com MFA ativo também devem confirmar o segundo fator. MFA TOTP pode ser ativado por qualquer perfil; quando ativo, também é exigido no login. Recuperação de senha por e-mail ainda não está disponível.
 
 ## Novos módulos (v0.5.0)
 

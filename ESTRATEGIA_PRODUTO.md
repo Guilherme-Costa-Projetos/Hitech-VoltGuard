@@ -53,7 +53,7 @@ As referências são fontes de padrões, não especificações a reproduzir. Sep
 ### Etapa 1 — Tornar a base confiável (primeiro ciclo de engenharia)
 
 - Separar ambientes de demonstração, teste e produção; remover qualquer dado de exemplo ambíguo na experiência de produção.
-- Formalizar identidade, usuários, convite, recuperação de conta, MFA para administradores, papéis e permissões por ação.
+- Formalizar identidade, usuários, convite, recuperação de conta, MFA para todos os perfis com imposição obrigatória para administradores, papéis e permissões por ação.
 - Implementar migrações versionadas, constraints e índices; revisar isolamento multiempresa endpoint por endpoint.
 - Padronizar o evento de telemetria: tenant/site/ativo/dispositivo, nome da variável, valor, unidade, instante de origem, instante de recepção, qualidade, origem e identificador idempotente.
 - Ingestão com credenciais por dispositivo, rotação/revogação, rate limits compartilhados, validação, fila/retry e trilha de auditoria.

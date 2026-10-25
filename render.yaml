@@ -20,6 +20,8 @@ services:
           property: connectionString
       - key: SIMULATE_TELEMETRY
         value: "0"
+      - key: ALLOW_SELF_SERVICE_REGISTRATION
+        value: "0"
 
 databases:
   - name: voltguard-db

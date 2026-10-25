@@ -38,6 +38,27 @@
                 : numero.toLocaleString('pt-BR', {minimumFractionDigits:casas, maximumFractionDigits:2});
         }
 
+        function formatarLeituraPainel(painel, campo, casas = 1) {
+            if (painel[`${campo}_has_reading`] === false || (painel.data_available === false && !painel[`${campo}_has_reading`])) return 'Sem leitura';
+            const valor = formatarMedida(painel[campo], casas);
+            if (painel[`${campo}_measured`] === false && valor !== 'Sem dado') {
+                return `${valor} (última leitura preservada)`;
+            }
+            return valor;
+        }
+
+        function statusOperacionalPainel(painel) {
+            if (painel.data_available === false) return 'AGUARDANDO TELEMETRIA';
+            if (painel.status === 'PARCIAL') return 'PARCIAL — AVALIAÇÃO INCOMPLETA';
+            return painel.status || 'INDEFINIDO';
+        }
+
+        function rotuloTensaoPainel(painel) {
+            if (String(painel.name || '').includes('DEMO')) return 'Tensão simulada (DEMO)';
+            if (painel.voltage_measured) return 'Tensão medida';
+            return painel.voltage_has_reading ? 'Tensão (última leitura preservada)' : 'Tensão de referência';
+        }
+
         function resumirConectividade(painel) {
             const estado = painel.connectivity_status || 'INDEFINIDO';
             const labels = {
@@ -67,6 +88,24 @@
         function mostrarRegisto(mostrar) {
             document.getElementById('login-screen').classList.toggle('is-hidden', mostrar);
             document.getElementById('register-screen').classList.toggle('is-hidden', !mostrar);
+        }
+
+        async function carregarDisponibilidadeCadastro() {
+            const button = document.getElementById('show-register-button');
+            const message = document.getElementById('registration-unavailable');
+            if (!button || !message) return;
+            try {
+                const response = await fetch('/api/tenant/registration-status', {headers:{'Accept':'application/json'}});
+                if (!response.ok) throw new Error('Não foi possível consultar o cadastro.');
+                const config = await response.json();
+                const enabled = config.self_service_enabled === true;
+                button.classList.toggle('is-hidden', !enabled);
+                message.classList.toggle('is-hidden', enabled);
+            } catch (_error) {
+                button.classList.add('is-hidden');
+                message.classList.remove('is-hidden');
+                message.textContent = 'Não foi possível verificar se o cadastro público está disponível.';
+            }
         }
 
         async function registarTenant() {
@@ -99,16 +138,24 @@
 
             const usuario = usuarioInput.value.trim();
             const senha = senhaInput.value;
+            const mfaCodeInput = document.getElementById('mfa-login-code');
+            const mfaCode = mfaCodeInput?.value.trim() || '';
             if(errEl) errEl.innerText = "A autenticar...";
 
             try {
                 const res = await fetch('/api/token', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username: usuario, password: senha})
+                    body: JSON.stringify({username: usuario, password: senha, ...(mfaCode ? {mfa_code: mfaCode} : {})})
                 });
                 
                 const data = await res.json();
+                if (res.status === 401 && data.detail === 'MFA_REQUIRED') {
+                    document.getElementById('mfa-login-group')?.classList.remove('is-hidden');
+                    if(errEl) errEl.innerText = 'Informe o código do aplicativo autenticador ou um código de recuperação.';
+                    mfaCodeInput?.focus();
+                    return;
+                }
                 if(!res.ok) {
                     throw new Error(data.detail || "Utilizador ou senha incorretos.");
                 }
@@ -125,9 +172,10 @@
                 document.getElementById('cargo-display').innerText = currentCargo;
                 document.getElementById('login-screen').classList.add('is-hidden');
                 document.getElementById('dashboard-screen').classList.remove('is-hidden');
+                document.getElementById('mfa-login-group')?.classList.add('is-hidden');
+                if (mfaCodeInput) mfaCodeInput.value = '';
 
                 construirAbas();
-                atualizarKPIs();
                 iniciarPolling();
             } catch (err) {
                 console.error("Erro no Login:", err);
@@ -221,16 +269,16 @@
         function atualizarKPIs() {
             const banner = document.getElementById('kpi-banner');
             if(!banner) return;
+            const panels = Object.values(dadosGlobais).filter(panel => panel && panel.id);
+            const onlinePanels = panels.filter(panel => panel.connectivity_status === 'ONLINE').length;
+            const activeAlarms = alarmsData.filter(alarm => ['ACTIVE', 'ACKNOWLEDGED'].includes(alarm.status)).length;
+            const openWorkOrders = workOrders.filter(order => !['CONCLUIDA', 'CANCELADA'].includes(order.status)).length;
             banner.classList.remove('is-hidden');
-            banner.innerHTML = currentCargo === 'CEO' ? `
-                <div class="kpi-card"><h4>Risco</h4><span data-vg-style="static-c0b89d302c95">Critico</span></div>
-                <div class="kpi-card"><h4>Downtime (demo)</h4><span>R$ 14.500 / h</span></div>
-                <div class="kpi-card"><h4>Confiabilidade (demo)</h4><span>98.4%</span></div>
-                <div class="kpi-card"><h4>ESG (demo)</h4><span>124 kWh</span></div>
-            ` : `
-                <div class="kpi-card"><h4>Equipe</h4><span>100% Ativa</span></div>
-                <div class="kpi-card"><h4>MTTR (demo)</h4><span>32 min</span></div>
-                <div class="kpi-card"><h4>Eficiência (demo)</h4><span>99.1%</span></div>
+            banner.innerHTML = `
+                <div class="kpi-card"><h4>Painéis cadastrados</h4><span>${panels.length}</span></div>
+                <div class="kpi-card"><h4>Painéis online</h4><span>${onlinePanels} de ${panels.length}</span></div>
+                <div class="kpi-card"><h4>Alarmes ativos</h4><span>${activeAlarms}</span></div>
+                <div class="kpi-card"><h4>Ordens em aberto</h4><span>${openWorkOrders}</span></div>
             `;
         }
 
@@ -277,6 +325,7 @@
                         });
                         dadosGlobais = {};
                         data.panels.forEach(p => { dadosGlobais[p.id] = p; });
+                        atualizarKPIs();
                         
                         if (currentTab === 'predictive') {
                             atualizarGraficosExistentes();
@@ -404,13 +453,13 @@
                         <h3>Cubículo Encontrado: ${escapeHtml(p.id)} - ${escapeHtml(p.name)}</h3>
                         <p><strong>Local:</strong> ${escapeHtml(p.location)}</p>
                         <p><strong>Gateway QR:</strong> ${escapeHtml(p.gateway_qr)}</p>
-                        <p><strong>Tensão:</strong> ${escapeHtml(p.voltage_v == null ? (p.voltage || 'Sem dado') : `${formatarMedida(p.voltage_v, 1)} V`)} | <strong>Corrente:</strong> ${escapeHtml(formatarMedida(p.current))} A</p>
-                        <p><strong>Temperatura:</strong> ${escapeHtml(formatarMedida(p.temperature))} °C${p.temperature_measured === false ? ' (última leitura preservada)' : ''}</p>
+                        <p><strong>${escapeHtml(rotuloTensaoPainel(p))}:</strong> ${escapeHtml(p.voltage_v == null ? (p.voltage || 'Sem dado') : `${formatarMedida(p.voltage_v, 1)} V`)} | <strong>Corrente:</strong> ${escapeHtml(formatarLeituraPainel(p, 'current'))}${p.current_has_reading ? ' A' : ''}</p>
+                        <p><strong>Temperatura:</strong> ${escapeHtml(formatarLeituraPainel(p, 'temperature'))}${p.temperature_has_reading ? ' °C' : ''}</p>
                         ${p.active_power_kw == null ? '' : `<p><strong>Potência ativa:</strong> ${escapeHtml(formatarMedida(p.active_power_kw, 2))} kW</p>`}
                         ${p.active_energy_kwh == null ? '' : `<p><strong>Energia acumulada:</strong> ${escapeHtml(formatarMedida(p.active_energy_kwh, 2))} kWh</p>`}
                         ${p.frequency_hz == null ? '' : `<p><strong>Frequência:</strong> ${escapeHtml(formatarMedida(p.frequency_hz, 2))} Hz</p>`}
                         ${p.power_factor == null ? '' : `<p><strong>Fator de potência:</strong> ${escapeHtml(formatarMedida(p.power_factor, 3))}</p>`}
-                        <p><strong>Status operacional:</strong> ${escapeHtml(p.status)}</p>
+                        <p><strong>Status operacional:</strong> ${escapeHtml(statusOperacionalPainel(p))}</p>
                         <p><strong>Conectividade:</strong> ${escapeHtml(resumirConectividade(p))}</p>
                         <p><strong>Diagnóstico:</strong> ${escapeHtml(p.recommendation)}</p>
                     </div>`;
@@ -1187,10 +1236,6 @@
         async function carregarStatusMfa() {
             const container = document.getElementById('mfa-management');
             if (!container) return;
-            if (!['CEO', 'Gerente'].includes(currentCargo)) {
-                container.innerHTML = '<p>MFA de administrador está disponível para perfis CEO e Gerente.</p>';
-                return;
-            }
             if (mfaRecoveryCodes.length) {
                 definirMfaNecessarioParaTrocaSenha(true);
                 container.innerHTML = `<h4>MFA ativado</h4><p>${mfaPasswordChanged ? 'Senha alterada com sucesso. ' : ''}Guarde estes códigos agora. Cada código pode ser usado uma única vez e não será mostrado novamente.</p><pre class="mfa-recovery-codes">${mfaRecoveryCodes.map(escapeHtml).join('\n')}</pre><button type="button" class="btn-action" data-action="mfa-ack-codes">${mfaPasswordChanged ? 'Guardei os códigos e sair' : 'Já guardei os códigos'}</button>`;
@@ -1208,14 +1253,10 @@
                     container.innerHTML = `<h4>Conclua a configuração</h4><p>Escaneie este QR Code no Microsoft Authenticator ou em outro aplicativo compatível. A configuração usa códigos TOTP de 6 dígitos com validade de 30 segundos.</p><img class="mfa-setup-qr" src="${escapeHtml(mfaEnrollment.qr_code_data_url)}" alt="QR Code privado para configurar o autenticador"><p>Se não conseguir escanear, adicione a chave manualmente: <code>${escapeHtml(mfaEnrollment.secret)}</code></p><details><summary>URI para configurar manualmente</summary><code class="mfa-setup-uri">${escapeHtml(mfaEnrollment.provisioning_uri)}</code></details><form data-vg-submit="confirm-mfa"><div class="input-group"><label for="mfa-confirm-code">Código de 6 dígitos do aplicativo</label><input id="mfa-confirm-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></div><button type="submit" class="btn-primary">Confirmar código</button></form><p id="mfa-status-message" role="status" aria-live="polite"></p>`;
                     return;
                 }
-                if (!state.eligible) {
-                    container.innerHTML = '<p>MFA de administrador está disponível para perfis CEO e Gerente.</p>';
-                    return;
-                }
                 if (state.enabled) {
-                    container.innerHTML = `<h4>MFA ativo para troca de senha</h4><p>O login normal usa somente sua senha. O código do autenticador será pedido ao alterar a senha. Restam ${Number(state.recovery_codes_remaining) || 0} código(s) de recuperação.</p><form data-vg-submit="disable-mfa"><div class="input-group"><label for="mfa-disable-password">Senha atual</label><input id="mfa-disable-password" type="password" autocomplete="current-password" maxlength="256" required></div><div class="input-group"><label for="mfa-disable-code">Código MFA ou código de recuperação</label><input id="mfa-disable-code" autocomplete="one-time-code" maxlength="20" required></div><button type="submit" class="btn-action">Desativar MFA</button></form><p id="mfa-status-message" role="status" aria-live="polite"></p>`;
+                    container.innerHTML = `<h4>MFA ativo no login</h4><p>O autenticador ou um código de recuperação será pedido ao entrar e ao alterar a senha. Restam ${Number(state.recovery_codes_remaining) || 0} código(s) de recuperação.</p><form data-vg-submit="disable-mfa"><div class="input-group"><label for="mfa-disable-password">Senha atual</label><input id="mfa-disable-password" type="password" autocomplete="current-password" maxlength="256" required></div><div class="input-group"><label for="mfa-disable-code">Código MFA ou código de recuperação</label><input id="mfa-disable-code" autocomplete="one-time-code" maxlength="23" required></div><button type="submit" class="btn-action">Desativar MFA</button></form><p id="mfa-status-message" role="status" aria-live="polite"></p>`;
                 } else {
-                    container.innerHTML = `<h4>MFA desativado</h4><p>Ative o autenticador para confirmar futuras trocas de senha. O login normal continuará usando somente sua senha.</p><form data-vg-submit="setup-mfa"><div class="input-group"><label for="mfa-setup-password">Confirme sua senha atual</label><input id="mfa-setup-password" type="password" autocomplete="current-password" maxlength="256" required></div><button type="submit" class="btn-primary">Configurar aplicativo autenticador</button></form><p id="mfa-status-message" role="status" aria-live="polite"></p>`;
+                    container.innerHTML = `<h4>MFA desativado</h4><p>Ative o autenticador para proteger o login e futuras trocas de senha com uma segunda etapa.</p><form data-vg-submit="setup-mfa"><div class="input-group"><label for="mfa-setup-password">Confirme sua senha atual</label><input id="mfa-setup-password" type="password" autocomplete="current-password" maxlength="256" required></div><button type="submit" class="btn-primary">Configurar aplicativo autenticador</button></form><p id="mfa-status-message" role="status" aria-live="polite"></p>`;
                 }
             } catch (err) {
                 container.innerHTML = `<p role="status">Não foi possível carregar o estado do MFA: ${escapeHtml(err.message)}</p>`;
@@ -1483,7 +1524,7 @@
             if(!container) return;
 
             if (currentTab === 'account') {
-                container.innerHTML = `<section class="user-management-card account-security-card"><h3>🔐 Segurança da conta</h3><p>Usuário: <strong>${escapeHtml(currentUser)}</strong> · Perfil: <strong>${escapeHtml(currentCargo)}</strong></p><p>Use uma senha exclusiva com pelo menos 12 caracteres. Ao alterá-la, todas as sessões abertas desta conta serão encerradas.</p><form class="account-password-form" data-vg-submit="change-password"><div class="input-group"><label for="account-current-password">Senha atual</label><input id="account-current-password" type="password" autocomplete="current-password" maxlength="256" required></div><div class="input-group"><label for="account-new-password">Nova senha</label><input id="account-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div><div class="input-group"><label for="account-confirm-password">Confirme a nova senha</label><input id="account-confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div><div class="input-group is-hidden" id="account-mfa-code-group"><label for="account-mfa-code">Código do autenticador ou de recuperação</label><input id="account-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" placeholder="Código MFA"></div><button type="submit" class="btn-primary">Alterar senha</button><p id="account-password-status" role="status" aria-live="polite"></p></form><section class="mfa-account-section"><h3>📲 Autenticação em dois fatores</h3><div id="mfa-management" role="region" aria-live="polite"><p>Carregando configuração MFA…</p></div></section></section>`;
+                container.innerHTML = `<section class="user-management-card account-security-card"><h3>🔐 Segurança da conta</h3><p>Usuário: <strong>${escapeHtml(currentUser)}</strong> · Perfil: <strong>${escapeHtml(currentCargo)}</strong></p><p>Use uma senha exclusiva com pelo menos 12 caracteres. Ao alterá-la, todas as sessões abertas desta conta serão encerradas.</p><form class="account-password-form" data-vg-submit="change-password"><div class="input-group"><label for="account-current-password">Senha atual</label><input id="account-current-password" type="password" autocomplete="current-password" maxlength="256" required></div><div class="input-group"><label for="account-new-password">Nova senha</label><input id="account-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div><div class="input-group"><label for="account-confirm-password">Confirme a nova senha</label><input id="account-confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div><div class="input-group is-hidden" id="account-mfa-code-group"><label for="account-mfa-code">Código do autenticador ou de recuperação</label><input id="account-mfa-code" autocomplete="one-time-code" maxlength="23" placeholder="Código MFA"></div><button type="submit" class="btn-primary">Alterar senha</button><p id="account-password-status" role="status" aria-live="polite"></p></form><section class="mfa-account-section"><h3>📲 Autenticação em dois fatores</h3><div id="mfa-management" role="region" aria-live="polite"><p>Carregando configuração MFA…</p></div></section></section>`;
                 carregarStatusMfa();
                 return;
             }
@@ -1799,13 +1840,13 @@
                         <h3>${escapeHtml(p.id)} - ${escapeHtml(p.name)}</h3>
                         <p><strong>Local:</strong> ${escapeHtml(p.location)}</p>
                         <p><strong>Gateway QR:</strong> ${escapeHtml(p.gateway_qr)}</p>
-                        <p><strong>Tensão:</strong> ${escapeHtml(p.voltage_v == null ? (p.voltage || 'Sem dado') : `${formatarMedida(p.voltage_v, 1)} V`)} | <strong>Corrente:</strong> ${escapeHtml(formatarMedida(p.current))} A</p>
-                        <p><strong>Temperatura:</strong> ${escapeHtml(formatarMedida(p.temperature))} °C</p>
+                        <p><strong>${escapeHtml(rotuloTensaoPainel(p))}:</strong> ${escapeHtml(p.voltage_v == null ? (p.voltage || 'Sem dado') : `${formatarMedida(p.voltage_v, 1)} V`)} | <strong>Corrente:</strong> ${escapeHtml(formatarLeituraPainel(p, 'current'))}${p.current_has_reading ? ' A' : ''}</p>
+                        <p><strong>Temperatura:</strong> ${escapeHtml(formatarLeituraPainel(p, 'temperature'))}${p.temperature_has_reading ? ' °C' : ''}</p>
                         ${p.active_power_kw == null ? '' : `<p><strong>Potência ativa:</strong> ${escapeHtml(formatarMedida(p.active_power_kw, 2))} kW</p>`}
                         ${p.active_energy_kwh == null ? '' : `<p><strong>Energia acumulada:</strong> ${escapeHtml(formatarMedida(p.active_energy_kwh, 2))} kWh</p>`}
                         ${p.frequency_hz == null ? '' : `<p><strong>Frequência:</strong> ${escapeHtml(formatarMedida(p.frequency_hz, 2))} Hz</p>`}
                         ${p.power_factor == null ? '' : `<p><strong>Fator de potência:</strong> ${escapeHtml(formatarMedida(p.power_factor, 3))}</p>`}
-                        <p><strong>Status operacional:</strong> ${escapeHtml(p.status)}</p>
+                        <p><strong>Status operacional:</strong> ${escapeHtml(statusOperacionalPainel(p))}</p>
                         <p><strong>Conectividade:</strong> ${escapeHtml(resumirConectividade(p))}</p>
                     </div>`).join('');
             } else if (currentTab === 'predictive') {
@@ -2070,6 +2111,7 @@
                     break;
             }
         });
+        carregarDisponibilidadeCadastro();
         document.addEventListener('submit', (event) => {
             const form = event.target;
             if (!(form instanceof HTMLFormElement)) return;

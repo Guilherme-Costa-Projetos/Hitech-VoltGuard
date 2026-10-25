@@ -6,7 +6,7 @@ Este procedimento cobre os dados armazenados no PostgreSQL do Render. Faça o ba
 
 O Blueprint deste repositório solicita PostgreSQL `Free`. A documentação atual do Render informa que bancos Free não têm backups gerenciados nem PITR, expiram 30 dias após a criação, ficam inacessíveis ao expirar e são excluídos ao fim de mais 14 dias sem upgrade. O serviço web Free também é para teste, não produção. Consulte [limitações do Render Free](https://render.com/docs/free) e [recuperação e backups PostgreSQL](https://render.com/docs/postgresql-backups).
 
-A auditoria do piloto registrou a expiração do banco `dpg-db9as5gn74is73f2felg-a` para **15/11/2026**. Confirme a data e o banco conectado no Dashboard antes de agir; o serviço histórico e o serviço piloto podem apontar para bancos diferentes. Não altere `DATABASE_URL`, não migre nem exclua banco até identificar e preservar qualquer dado existente.
+A auditoria somente de metadados no workspace `My Workspace` confirmou `dpg-db9as5gn74is73f2felg-a` como PostgreSQL 18, plano Free, criado em **16/10/2026 23:07:02 UTC**, com expiração em **15/11/2026 23:07:02 UTC**. Uma consulta somente de estrutura encontrou tabelas e uma consulta agregada confirmou registros existentes; nenhuma linha ou valor de usuário foi lido. O repositório GitHub é público, portanto não registre aqui contagens nem conteúdo dos dados. Confirme no Dashboard qual serviço usa esse banco; o serviço histórico e o serviço piloto podem apontar para bancos diferentes. Não altere `DATABASE_URL`, não migre nem exclua o banco até gerar e validar backup.
 
 Até haver decisão aprovada sobre infraestrutura e restauração validada:
 
@@ -38,7 +38,7 @@ Render não oferece exportação lógica pelo painel nem recuperação PITR no p
 Use esta opção somente para manter uma cópia de demonstração enquanto a decisão de infraestrutura está pendente. Instale ferramentas PostgreSQL da mesma versão principal do destino (o Blueprint solicita PostgreSQL 16) e conecte-se usando o host externo, que exige TLS. Não cole a URL completa do banco em comandos, tickets, capturas, histórico do terminal ou mensagens: ela contém credenciais.
 
 1. No Windows, crie o arquivo `%APPDATA%\\postgresql\\pgpass.conf` fora do repositório; no macOS/Linux, use `~/.pgpass` ou defina `PGPASSFILE`. Restrinja o acesso ao usuário atual. A linha tem o formato `host:port:database:username:password`; escape `:` e `\\` dentro dos campos. Veja [o formato e permissões do arquivo de senha do PostgreSQL](https://www.postgresql.org/docs/current/libpq-pgpass.html).
-2. Obtenha host, banco e usuário na página **Connect** do banco no Render. Use a senha somente no arquivo de senha local protegido. No macOS/Linux, aplique `chmod 0600 ~/.pgpass`; no Windows, mantenha o arquivo no perfil privado do usuário.
+2. Obtenha host, banco e usuário na página **Connect** do banco no Render. Use a senha somente no arquivo de senha local protegido. No macOS/Linux, aplique `chmod 0600 ~/.pgpass`; no Windows, mantenha o arquivo no perfil privado do usuário. O banco atualmente auditado é PostgreSQL 18; use cliente compatível e confirme a versão principal do destino antes de qualquer restauração.
 3. Escolha uma pasta privada em disco criptografado, fora do Git e de pastas sincronizadas sem aprovação. No PowerShell, defina `PGPASSFILE` se o arquivo não estiver no caminho padrão e `PGSSLMODE=require`; então execute, substituindo cada placeholder:
 
    ```powershell

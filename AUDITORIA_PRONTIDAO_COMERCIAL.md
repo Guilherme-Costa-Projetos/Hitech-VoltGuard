@@ -1,29 +1,31 @@
 # Auditoria de prontidão — HITECH VoltGuard
 
-**Atualização:** 23/10/2026
-**Escopo:** código da branch de prontidão, deploy do piloto no Render e observações do banco registradas na auditoria inicial de 22/10.
-**Resultado:** o piloto está acessível, mas ainda não está pronto para produção comercial nem para receber dados operacionais reais.
+**Atualização:** 25/10/2026
+**Escopo:** código da branch de prontidão, deploy do piloto no Render e metadados/consultas somente de estrutura e agregados do PostgreSQL em 25/10.
+**Resultado:** o deploy do piloto está `live`, mas o acesso HTTP após o deploy mais recente não foi confirmado; o produto ainda não está pronto para produção comercial nem para receber dados operacionais reais.
 
 ## Bloqueios prioritários
 
 ### P0 — Confirmar e corrigir o banco usado pelo serviço
 
-- O PostgreSQL `voltguard-db` (`dpg-db9as5gn74is73f2felg-a`) está disponível, mas a consulta somente leitura a `pg_tables` não encontrou tabela alguma.
-- Os logs da aplicação no mesmo ambiente registram cadastro de organização e autenticação com HTTP 200. O app cria as tabelas na inicialização, portanto esses fatos não combinam com o app gravando nesse PostgreSQL vazio.
-- A auditoria inicial não conseguiu confirmar a variável `DATABASE_URL` no serviço nem localizar tabelas no PostgreSQL consultado.
-- O código da branch agora encerra a inicialização no Render se `DATABASE_URL` estiver ausente ou apontar para SQLite. O deploy atual do piloto iniciou, o que indica que a proteção de banco passou, mas não confirma qual banco contém os dados anteriores nem a persistência/expiração do destino.
-- O banco PostgreSQL atual está no plano Free, com expiração informada para **15/11/2026**. O serviço web também está no plano Free. O Render documenta que o sistema de arquivos de serviços Free é efêmero, inclusive para SQLite, e que bancos PostgreSQL Free expiram após 30 dias. Esses planos são destinados a teste, não à produção ([limitações do plano Free do Render](https://render.com/docs/free)).
-- Existem dois serviços Render para este repositório: `Hitech-VoltGuard` em `main` e `voltguard-pilot-free` na branch de revisão. O primeiro continua servindo o endereço histórico, com deploy por commit e sem health check; o segundo contém a revisão e está configurado para aguardar CI. Ainda não houve promoção para `main`.
+- A auditoria somente leitura de 22/10 não encontrou tabelas em `voltguard-db` (`dpg-db9as5gn74is73f2felg-a`). Essa observação é histórica: nova consulta em 25/10 encontrou 19 tabelas e registros existentes. Foram consultados apenas nomes de tabelas e agregados; nenhum valor de linha foi lido. Este repositório é público, portanto os agregados não são reproduzidos aqui.
+- O PostgreSQL selecionado no workspace `My Workspace` consta como `available`, plano Free, PostgreSQL 18, criado em **16/10/2026 23:07:02 UTC**, com expiração em **15/11/2026 23:07:02 UTC**. A existência de tabelas e registros confirma que qualquer troca de banco, migração ou exclusão deve ser precedida de backup e restauração validada.
+- Não foi possível confirmar a variável `DATABASE_URL` do serviço pelo conector Render: a resposta não expõe o vínculo de variáveis. Assim, ainda não se sabe se o serviço piloto, o serviço histórico ou ambos apontam para esse banco. A configuração observada de serviço não basta para provar o vínculo.
+- O Blueprint versionado solicita PostgreSQL 16, enquanto o recurso existente consultado está em PostgreSQL 18. Não reaplique o Blueprint sobre o recurso existente nem inicie migração até confirmar compatibilidade e preservar os dados.
+- O código da branch encerra a inicialização no Render se `DATABASE_URL` estiver ausente ou apontar para SQLite. O deploy mais recente do piloto, do commit `ec4aaf3258d097557fafb0aab211a0fe56f35db7`, ficou `live` em `dep-dbf01ke7bikc73bli5b0`; isso confirma o deploy, não a identidade do banco nem a persistência dos dados.
+- O repositório GitHub está **público** (metadados consultados em 25/10/2026). Não foi alterada sua visibilidade. O serviço piloto e o histórico continuam servindo URLs públicas; não use segredos, dados pessoais ou operacionais reais nesse ambiente.
+- O serviço web e o banco PostgreSQL estão no plano Free. O Render documenta que o sistema de arquivos do serviço Free é efêmero, bancos PostgreSQL Free expiram após 30 dias e esses planos são destinados a teste, não produção ([limitações do plano Free do Render](https://render.com/docs/free)).
+- Há dois serviços Render públicos ligados ao mesmo repositório: `Hitech-VoltGuard` segue `main` em `https://hitech-voltguard-934a.onrender.com/`, sem health check; `voltguard-pilot-free` segue `codex/commercial-readiness-audit` em `https://voltguard-pilot-free.onrender.com/`, com `/health` e deploy após CI. Ambos estão no plano Free. A revisão do piloto ainda não foi promovida para `main`.
 
-**Ação para liberar:** no Dashboard, confirmar a origem efetiva de `DATABASE_URL` sem copiar o segredo para o chat; vincular o serviço ao PostgreSQL correto; migrar para plano persistente antes de 15/11; fazer backup/exportação e validar uma restauração; só então reiniciar/deployar. Antes de decidir qual banco usar, preservar qualquer dado existente no serviço.
+**Ação para liberar:** no Dashboard, identificar a origem efetiva de `DATABASE_URL` sem copiar o segredo para o chat. Antes de qualquer alteração, gerar backup lógico manual do Free e validar restauração completa em instância PostgreSQL separada e vazia. Depois decidir infraestrutura e compatibilidade de versão; não reiniciar, migrar ou excluir dados antes disso. Resolver a expiração antes de **15/11/2026 23:07 UTC**.
 
 ### P0 — Tornar o health check HTTP efetivo
 
 - A configuração inicial do serviço estava sem `healthCheckPath`; `/health` foi definido no Render em 23/10 e o deploy da configuração concluiu como `live`.
-- A rota implementa `SELECT 1` e responde erro se o banco não responder. A URL pública `/health` retornou HTTP 200 com `{"status":"ok","service":"voltguard","mode":"stored-data"}` após a configuração e novamente depois dos deploys de `a13252d`, `eeb9c29` e `0b182cf`. A resposta mais recente foi `ok`; o endpoint de status confirmou auto-cadastro desativado.
+- A rota implementa `SELECT 1` e responde erro se o banco não responder. Consultas anteriores à URL pública `/health` retornaram HTTP 200 e o endpoint de status confirmou auto-cadastro desativado. Em 25/10/2026, Render confirmou o deploy mais recente como `live`; uma nova requisição HTTP não pôde ser verificada deste ambiente por falha de resolução DNS. Portanto, a saúde HTTP pós-deploy mais recente permanece pendente de verificação direta no navegador.
 - O modo automático de deploy do Render foi alterado de `On Commit` para `After CI Checks Pass`; a próxima revisão só será publicada após os checks configurados no GitHub passarem.
 
-**Ação para liberar:** validar novamente `/health` depois do deploy do código revisado e confirmar que `DATABASE_URL` aponta para o PostgreSQL persistente correto; `SELECT 1` confirma conexão, mas não identidade nem histórico do banco.
+**Ação para liberar:** abrir o endpoint `/health` do piloto no navegador do usuário após o deploy e confirmar HTTP 200; confirmar separadamente no Dashboard qual recurso fornece `DATABASE_URL`, sem compartilhar seu valor. `SELECT 1` confirma conexão, mas não identidade nem histórico do banco.
 
 ## Lacunas de produto e operação
 
@@ -70,18 +72,19 @@
 - Login de contas com MFA habilitado exige segundo fator. Cadastro público fecha por padrão e só abre com `ALLOW_SELF_SERVICE_REGISTRATION=1` configurado explicitamente.
 - Acrescentado `scripts/provision_first_tenant.py`: inicializa a primeira organização apenas quando todas as tabelas estão vazias, exige confirmação e senha em terminal interativo, e reaproveita as validações do endpoint existente. Não altera dados de uma base preenchida nem ativa o cadastro público do serviço.
 - Novo teste percorre todas as rotas `/api/` e falha se alguma não exigir usuário autenticado ou credencial de dispositivo explicitamente.
-- Health check HTTP `/health` configurado e respondendo no serviço piloto Render, além da configuração declarada no Blueprint.
-- Deploy do serviço configurado para aguardar CI do GitHub. O commit `0b182cf` passou em `pip-audit`, 28 testes, sintaxe e build Docker, e está `live` no Render.
+- Health check HTTP `/health` configurado no Render e declarado no Blueprint. A resposta HTTP pós-deploy mais recente ainda precisa ser verificada pelo navegador.
+- Deploy do serviço configurado para aguardar CI do GitHub. O commit `ec4aaf3258d097557fafb0aab211a0fe56f35db7` está `live` no Render; a execução GitHub Actions `40196676008` passou em Gitleaks, `pip-audit`, 31 testes de integração, sintaxe Python/JavaScript e build Docker.
 
 ## Ordem sugerida de liberação
 
-1. Identificar sem ambiguidade o banco que contém os dados atuais e corrigir o vínculo antes de qualquer reinício.
-2. Migrar o banco e o serviço para recursos persistentes e configurar backup/restauração.
-3. Manter o health check HTTP `/health` e validar a próxima revisão em homologação.
-4. Fechar onboarding, recuperação de conta, privacidade, suporte e cobrança.
-5. Validar hardware/protocolo e isolamento industrial com piloto pago e métricas de sucesso acordadas.
-6. Só então habilitar clientes de produção e anunciar métricas/benefícios que tenham evidência.
+1. Fazer backup lógico do banco Free populado e testar restauração em instância separada; resolver a expiração antes de 15/11/2026 23:07 UTC.
+2. Identificar sem ambiguidade o banco que cada serviço usa e validar a diferença PostgreSQL 16/18 antes de qualquer migração ou reinício.
+3. Aprovar infraestrutura persistente e configurar backup/restauração.
+4. Manter o health check HTTP `/health` e validar a próxima revisão em homologação.
+5. Fechar onboarding, recuperação de conta, privacidade, suporte e cobrança.
+6. Validar hardware/protocolo e isolamento industrial com piloto pago e métricas de sucesso acordadas.
+7. Só então habilitar clientes de produção e anunciar métricas/benefícios que tenham evidência.
 
 ## Limites desta auditoria
 
-Esta revisão não substitui revisão independente de segurança, validação em medidor físico, assessoria jurídica/tributária ou confirmação do vínculo e da persistência de `DATABASE_URL` no painel do Render. Não foram alterados recursos pagos, segredos ou banco de dados. O Render foi configurado para verificar `/health` e aguardar o CI do GitHub antes de publicar.
+Esta revisão não substitui revisão independente de segurança, validação em medidor físico, assessoria jurídica/tributária ou confirmação do vínculo e da persistência de `DATABASE_URL` no painel do Render. Não foram alterados recursos pagos, segredos ou banco de dados. A visibilidade pública do GitHub foi confirmada; revise se isso é intencional antes de armazenar artefatos ou informações operacionais no repositório. O Render foi configurado para verificar `/health` e aguardar o CI do GitHub antes de publicar.

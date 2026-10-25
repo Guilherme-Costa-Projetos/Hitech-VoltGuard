@@ -4,6 +4,15 @@
 **Escopo:** código da branch de prontidão, deploy do piloto no Render e metadados/consultas somente de estrutura e agregados do PostgreSQL em 25/10.
 **Resultado:** o deploy do piloto está `live`; após a implantação, `/health` respondeu HTTP 200 e a página de login carregou. A autenticação e os fluxos que gravam dados não foram testados nesta verificação. O produto ainda não está pronto para produção comercial nem para receber dados operacionais reais.
 
+## Validação atualizada — 25/10/2026
+
+- A suíte local `python -m unittest discover -s tests -v` passou com **31 testes** usando as dependências declaradas em `requirements.txt`. A execução só inicializa a aplicação com banco de teste local; não conecta ao PostgreSQL do Render nem grava no piloto.
+- Foi exibido um `StarletteDeprecationWarning` sobre `starlette.testclient` e `httpx`. Não afetou o resultado atual, mas deve ser acompanhado na próxima atualização de dependências.
+- O GitHub Actions do commit `4c29a0a2f1136647b928382b610d9e4196f2a49e` concluiu com sucesso no run **40198092399** (run #65).
+- O Render confirma o deploy `dep-dbf0aauq1p3s73em1fbg` como `live`, associado ao mesmo commit, no serviço `voltguard-pilot-free` (plano Free, uma instância, sem alteração de configuração nesta verificação).
+- A consulta pública de leitura retornou `/health` com `status: ok` e `/api/tenant/registration-status` com `self_service_enabled: false`. Não houve login, cadastro, gravação ou alteração no banco.
+- Essas verificações confirmam a disponibilidade básica e a suíte automatizada; não substituem o teste manual dos fluxos autenticados, integração com hardware, restauração de backup nem os bloqueios P0 abaixo.
+
 ## Bloqueios prioritários
 
 ### P0 — Confirmar e corrigir o banco usado pelo serviço

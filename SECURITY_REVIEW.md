@@ -2,6 +2,13 @@
 
 Revisão do código e das dependências do branch `codex/commercial-readiness-audit`, atualizada em 25/10/2026. O resultado descreve o que foi verificado nesta cópia; não é certificação, pentest independente nem garantia de ausência de vulnerabilidades. O repositório GitHub está público; não versione segredos, dados de clientes ou relatórios que revelem informações operacionais.
 
+## Validação atualizada — 25/10/2026
+
+- A suíte local passou com 31 testes após instalação das dependências declaradas. Os testes usam dados locais de teste; nenhuma conexão ou mutação no PostgreSQL do piloto foi feita.
+- A versão de Starlette selecionada pelas faixas atuais emitiu `StarletteDeprecationWarning` ao importar `starlette.testclient` com `httpx`. A suíte passou; acompanhar a compatibilidade do adaptador em futuras atualizações e corrigir se a integração for removida.
+- O run GitHub Actions `40198092399` do commit `4c29a0a2f1136647b928382b610d9e4196f2a49e` terminou com sucesso. O deploy associado `dep-dbf0aauq1p3s73em1fbg` está `live`.
+- A rota `/health` retornou `ok`; o cadastro público continuou fechado. Não foram feitos login nem testes de gravação no serviço público.
+
 ## Corrigido nesta revisão
 
 - A suíte usava o mesmo IP simulado em todos os casos e consumia o limite real de cadastro/login compartilhado. Agora cada teste usa um endereço reservado próprio, sem desativar o limitador do aplicativo.

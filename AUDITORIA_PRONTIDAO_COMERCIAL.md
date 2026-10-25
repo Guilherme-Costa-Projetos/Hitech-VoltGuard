@@ -6,10 +6,10 @@
 
 ## Validação atualizada — 25/10/2026
 
-- A suíte local `python -m unittest discover -s tests -v` passou com **31 testes** usando as dependências declaradas em `requirements.txt`. A execução só inicializa a aplicação com banco de teste local; não conecta ao PostgreSQL do Render nem grava no piloto.
-- Foi exibido um `StarletteDeprecationWarning` sobre `starlette.testclient` e `httpx`. Não afetou o resultado atual, mas deve ser acompanhado na próxima atualização de dependências.
-- O GitHub Actions do commit `5748c201fad4db54253a568af8f99a6a7da91c88` concluiu com sucesso no run **40198450995** (run #67).
-- O Render confirma o deploy `dep-dbf0cgo473hc739hchig` como `live`, associado ao mesmo commit, no serviço `voltguard-pilot-free` (plano Free, uma instância, sem alteração de configuração nesta verificação).
+- A suíte local `python -m unittest discover -s tests -v` passou com **31 testes** usando `requirements-test.txt`. A execução só inicializa a aplicação com banco de teste local; não conecta ao PostgreSQL do Render nem grava no piloto.
+- O aviso do Starlette sobre `httpx` no `TestClient` foi resolvido adicionando `httpx2` somente em `requirements-test.txt`; `httpx` continua nas dependências de produção para o gateway. A suíte passou sem o aviso; `pip check` e `compileall` também passaram.
+- O GitHub Actions do commit `27686af1c9b814b5ac2411a0fc420469e473314d` concluiu com sucesso no run **40199040422** (run #69).
+- O Render confirma o deploy `dep-dbf0g4ks728c73d0nkkg` como `live`, associado ao mesmo commit, no serviço `voltguard-pilot-free` (plano Free, uma instância, sem alteração de configuração nesta verificação).
 - A consulta pública de leitura retornou `/health` com `status: ok` e `/api/tenant/registration-status` com `self_service_enabled: false`. Não houve login, cadastro, gravação ou alteração no banco.
 - Requisições GET sem autenticação a `/api/panels`, `/api/users` e `/api/export/executive-report` retornaram HTTP 401 com JSON; nenhum conteúdo protegido foi recebido.
 - Essas verificações confirmam a disponibilidade básica e a suíte automatizada; não substituem o teste manual dos fluxos autenticados, integração com hardware, restauração de backup nem os bloqueios P0 abaixo.

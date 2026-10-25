@@ -1,5 +1,11 @@
 # Changelog
 
+## CI e adaptador de testes — 25/10/2026
+
+- Adicionada dependência `httpx2` somente ao conjunto de teste para acompanhar a migração recomendada pelo Starlette; a dependência `httpx` usada pelo gateway continua no ambiente de produção.
+- CI instala `requirements-test.txt`, audita também as dependências de teste com `pip-audit` e continua construindo a imagem Docker apenas com `requirements.txt`.
+- As instruções locais de teste e checklist de implantação distinguem dependências de teste das dependências da aplicação.
+
 ## Preparação de piloto comercial — 23/10/2026
 
 - CI inclui verificação semanal e em cada push/PR do histórico Git alcançável com Gitleaks fixado; os resultados são redigidos e a permissão do job é somente leitura.

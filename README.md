@@ -409,7 +409,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 # Linux/macOS:
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-test.txt
 python -m unittest discover -s tests -v
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```

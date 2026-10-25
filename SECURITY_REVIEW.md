@@ -4,8 +4,8 @@ Revisão do código e das dependências do branch `codex/commercial-readiness-au
 
 ## Validação atualizada — 25/10/2026
 
-- A suíte local passou com 31 testes após instalação das dependências declaradas. Os testes usam dados locais de teste; nenhuma conexão ou mutação no PostgreSQL do piloto foi feita.
-- A versão de Starlette selecionada pelas faixas atuais emitiu `StarletteDeprecationWarning` ao importar `starlette.testclient` com `httpx`. A suíte passou; acompanhar a compatibilidade do adaptador em futuras atualizações e corrigir se a integração for removida.
+- A suíte local passou com 31 testes usando `requirements-test.txt`. Os testes usam dados locais de teste; nenhuma conexão ou mutação no PostgreSQL do piloto foi feita.
+- A versão atual do Starlette seleciona `httpx2` no `TestClient`; essa dependência foi isolada no ambiente de teste. `httpx` permanece nas dependências de produção para o gateway. A suíte passou sem aviso de depreciação.
 - O run GitHub Actions `40198450995` do commit `5748c201fad4db54253a568af8f99a6a7da91c88` terminou com sucesso. O deploy associado `dep-dbf0cgo473hc739hchig` está `live`.
 - A rota `/health` retornou `ok`; o cadastro público continuou fechado. Não foram feitos login nem testes de gravação no serviço público.
 - Requisições GET sem credenciais a `/api/panels`, `/api/users` e `/api/export/executive-report` retornaram HTTP 401 JSON, sem expor dados.

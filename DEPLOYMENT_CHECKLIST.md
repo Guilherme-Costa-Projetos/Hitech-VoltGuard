@@ -7,7 +7,7 @@
 - [ ] Pasta `vendor/` enviada com `chart.umd.min.js`, `html5-qrcode.min.js` e as duas licenças.
 - [ ] `.env`, banco local e segredos reais não foram enviados ao Git.
 - [ ] `render.yaml` revisado; planos/região/recursos confirmados no painel do Render.
-- [ ] Dependências e testes locais executados em ambiente com as dependências de `requirements.txt` instaladas.
+- [ ] Dependências de produção e de teste instaladas (`requirements.txt` e `requirements-test.txt`); suíte local aprovada.
 - [ ] Rever `SECURITY_REVIEW.md`; não considerar pendências de segurança/operação como aceites para dados reais sem decisão explícita.
 
 ## Durante o deploy

@@ -23,6 +23,7 @@
 
 - A configuração inicial do serviço estava sem `healthCheckPath`; `/health` foi definido no Render em 23/10 e o deploy da configuração concluiu como `live`.
 - A rota implementa `SELECT 1` e responde erro se o banco não responder. Em 25/10/2026, após o deploy `dep-dbf04h0473hc739h4fi0` do commit `4c6802de7777c4dd6bebb4dc1d03113e3d12df94`, a verificação direta no navegador retornou HTTP 200 com `{"status":"ok","service":"voltguard","mode":"stored-data"}`. A raiz carregou a tela de login; nenhuma autenticação nem gravação foi feita nesta verificação.
+- A consulta somente leitura ao endpoint público `/api/tenant/registration-status` retornou HTTP 200 com `self_service_enabled: false` após o deploy mais recente. Cadastro permanece fechado no piloto.
 - O modo automático de deploy do Render foi alterado de `On Commit` para `After CI Checks Pass`; a próxima revisão só será publicada após os checks configurados no GitHub passarem.
 
 **Ação para liberar:** abrir o endpoint `/health` do piloto no navegador do usuário após o deploy e confirmar HTTP 200; confirmar separadamente no Dashboard qual recurso fornece `DATABASE_URL`, sem compartilhar seu valor. `SELECT 1` confirma conexão, mas não identidade nem histórico do banco.

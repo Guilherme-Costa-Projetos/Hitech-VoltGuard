@@ -1,0 +1,14 @@
+title = "VoltGuard secret scan"
+
+[extend]
+useDefault = true
+
+# Gitleaks flags the fixed integration-test password in this historical test
+# commit as a generic API key. Scope the exception to that exact commit and
+# test file; all other findings remain blocking.
+[[allowlists]]
+description = "Known non-production integration-test password false positive"
+targetRules = ["generic-api-key"]
+condition = "AND"
+commits = ["612f12b19c7b6543c3e033731f20841541fd2e65"]
+paths = ['''^tests/test_render_smoke\.py$''']

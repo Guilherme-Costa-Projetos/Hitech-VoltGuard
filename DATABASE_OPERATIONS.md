@@ -8,6 +8,12 @@ O Blueprint deste repositório solicita PostgreSQL `Free`. A documentação atua
 
 A auditoria somente de metadados no workspace `My Workspace` confirmou `dpg-db9as5gn74is73f2felg-a` como PostgreSQL 18, plano Free, criado em **16/10/2026 23:07:02 UTC**, com expiração em **15/11/2026 23:07:02 UTC**. Uma consulta somente de estrutura encontrou tabelas e uma consulta agregada confirmou registros existentes; nenhuma linha ou valor de usuário foi lido. O repositório GitHub é público, portanto não registre aqui contagens nem conteúdo dos dados. Confirme no Dashboard qual serviço usa esse banco; o serviço histórico e o serviço piloto podem apontar para bancos diferentes. Não altere `DATABASE_URL`, não migre nem exclua o banco até gerar e validar backup.
 
+## Serviço histórico e possível SQLite efêmero
+
+A página Environment do serviço histórico `Hitech-VoltGuard` em `main` mostrou `SECRET_KEY`, mas nenhuma `DATABASE_URL` nem Environment Group. O `main.py` dessa branch define `sqlite:///./voltguard.db` quando a variável está ausente, e o Dockerfile executa a aplicação a partir de `/app`. O serviço pode, portanto, usar `/app/voltguard.db` no filesystem efêmero do container Free. Não foi verificado se o arquivo existe ou contém dados. Os registros/agregados observados no PostgreSQL não provam que esse seja o banco do serviço histórico ou do piloto.
+
+**Preservação:** não implante, reinicie, suspenda ou reconfigure o serviço histórico até a equipe responsável determinar se há dados locais que precisam ser preservados e escolher um método seguro de cópia a partir do container ainda em execução. O Dashboard informa que Shell/SSH não estão disponíveis no plano Free; não solicite upgrade pago sem aprovação e não tente exportar por um endpoint improvisado. Não cole, anexe ou versione o arquivo no GitHub/chat. Faça validação em cópia isolada. Se não houver método gratuito seguro, mantenha o serviço em execução e consulte o suporte do Render antes de qualquer deploy.
+
 Até haver decisão aprovada sobre infraestrutura e restauração validada:
 
 - mantenha apenas dados fictícios/de demonstração; não use dados operacionais reais nem prometa retenção;

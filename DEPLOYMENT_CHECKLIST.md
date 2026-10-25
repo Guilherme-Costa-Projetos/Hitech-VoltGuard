@@ -48,6 +48,7 @@
 
 ## Antes de qualquer piloto com dados reais
 
+- [ ] No serviço histórico em `main`, confirmar o possível `/app/voltguard.db` efêmero; o Dashboard mostrou ausência de `DATABASE_URL` e o código usa SQLite como padrão. Render Shell/SSH não está disponível no plano Free. Preservar qualquer dado enquanto o container ainda está em execução; não implantar, reiniciar ou suspender antes de um método seguro e aprovado de exportação.
 - [ ] Não usar dados reais no serviço/banco Free; Render declara que Free é para teste, não produção, e o PostgreSQL Free expira em 30 dias, sem backup gerenciado.
 - [ ] Confirmar no Dashboard qual banco cada serviço usa e a data de expiração; `dpg-db9as5gn74is73f2felg-a` expira em 15/11/2026 23:07 UTC e contém registros. Resolver antes da data sem substituir `DATABASE_URL` às cegas e sem executar o Blueprint (PostgreSQL 16) sobre o recurso existente (PostgreSQL 18).
 - [ ] Plano PostgreSQL persistente e custo recorrente aprovados pelo responsável; se não aprovado, manter apenas demonstração e planejar encerramento/exportação antes da expiração.

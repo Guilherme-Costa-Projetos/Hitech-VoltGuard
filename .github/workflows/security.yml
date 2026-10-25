@@ -31,9 +31,21 @@ jobs:
 
       - name: Scan all reachable Git history with redacted output
         run: |
+          report="${RUNNER_TEMP}/gitleaks-report.json"
+          set +e
           "$(go env GOPATH)/bin/gitleaks" git \
             --redact --no-banner \
+            --report-format json --report-path "$report" \
             --log-opts="--no-textconv --full-history --all" .
+          scan_status=$?
+          set -e
+
+          # Print only finding metadata; never print the matched secret or full report.
+          if [[ -s "$report" ]]; then
+            jq -r '.[] | "rule=\(.RuleID) path=\(.File) commit=\(.Commit) line=\(.StartLine)"' "$report"
+          fi
+
+          exit "$scan_status"
 
   python-security-and-tests:
     runs-on: ubuntu-latest

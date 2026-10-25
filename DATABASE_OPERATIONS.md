@@ -2,6 +2,19 @@
 
 Este procedimento cobre os dados armazenados no PostgreSQL do Render. Faça o backup antes de qualquer alteração de esquema, atualização importante ou atividade de manutenção. Use somente dados de demonstração enquanto a restauração não tiver sido validada.
 
+## Aviso crítico: PostgreSQL no plano Free
+
+O Blueprint deste repositório solicita PostgreSQL `Free`. A documentação atual do Render informa que bancos Free não têm backups gerenciados nem PITR, expiram 30 dias após a criação, ficam inacessíveis ao expirar e são excluídos ao fim de mais 14 dias sem upgrade. O serviço web Free também é para teste, não produção. Consulte [limitações do Render Free](https://render.com/docs/free) e [recuperação e backups PostgreSQL](https://render.com/docs/postgresql-backups).
+
+A auditoria do piloto registrou a expiração do banco `dpg-db9as5gn74is73f2felg-a` para **15/11/2026**. Confirme a data e o banco conectado no Dashboard antes de agir; o serviço histórico e o serviço piloto podem apontar para bancos diferentes. Não altere `DATABASE_URL`, não migre nem exclua banco até identificar e preservar qualquer dado existente.
+
+Até haver decisão aprovada sobre infraestrutura e restauração validada:
+
+- mantenha apenas dados fictícios/de demonstração; não use dados operacionais reais nem prometa retenção;
+- confirme no Dashboard a data exata de expiração e registre lembretes internos para decidir antes dela;
+- antes da expiração, escolha com o responsável: aprovar um plano persistente pago, migrar para outro destino aprovado ou encerrar o piloto após exportação;
+- não suponha que backup local isolado seja suficiente: teste a restauração em uma instância PostgreSQL separada e vazia antes de confiar no arquivo.
+
 ## Estado atual do aplicativo
 
 - O endereço `DATABASE_URL` seleciona o PostgreSQL no Render; em desenvolvimento local, o padrão é SQLite.
@@ -9,7 +22,7 @@ Este procedimento cobre os dados armazenados no PostgreSQL do Render. Faça o ba
 - Não há comando de migração separado nesta versão. Não edite tabelas manualmente nem introduza uma nova migração de esquema sem cópia do banco, plano de retorno e validação em uma instância separada.
 - O banco contém contas, hashes de senha, segredos TOTP criptografados, códigos de recuperação em hash, auditoria, credenciais de dispositivos em hash, telemetria e dados por organização. Trate qualquer exportação como informação sensível.
 
-## Criar uma exportação no painel do Render
+## Exportação lógica pelo painel em planos compatíveis
 
 1. Abra o Dashboard do Render e selecione o recurso **PostgreSQL** conectado ao serviço VoltGuard.
 2. Confirme que o nome do banco e o serviço correspondem ao ambiente pretendido.
@@ -18,7 +31,27 @@ Este procedimento cobre os dados armazenados no PostgreSQL do Render. Faça o ba
 5. Registre a data, o banco de origem e a versão do aplicativo em um registro de operação. Nunca inclua URLs de conexão, senhas ou segredos nesse registro.
 6. Armazene uma cópia fora do Render se precisar de retenção maior. O Render informa retenção de sete dias para exportações lógicas criadas no painel.
 
-O Render informa que exportações lógicas pelo painel e recuperação PITR não estão disponíveis para bancos no plano de computação Free. Confira o plano atual na página do banco. Para Free, use `pg_dump` a partir de uma máquina com ferramentas PostgreSQL instaladas e acesso à URL externa do banco; mantenha a URL fora do histórico de comandos, logs e mensagens. A URL externa contém credenciais.
+Render não oferece exportação lógica pelo painel nem recuperação PITR no plano Free. Confira o plano atual na página do banco.
+
+### Exportação manual para um banco Free
+
+Use esta opção somente para manter uma cópia de demonstração enquanto a decisão de infraestrutura está pendente. Instale ferramentas PostgreSQL da mesma versão principal do destino (o Blueprint solicita PostgreSQL 16) e conecte-se usando o host externo, que exige TLS. Não cole a URL completa do banco em comandos, tickets, capturas, histórico do terminal ou mensagens: ela contém credenciais.
+
+1. No Windows, crie o arquivo `%APPDATA%\\postgresql\\pgpass.conf` fora do repositório; no macOS/Linux, use `~/.pgpass` ou defina `PGPASSFILE`. Restrinja o acesso ao usuário atual. A linha tem o formato `host:port:database:username:password`; escape `:` e `\\` dentro dos campos. Veja [o formato e permissões do arquivo de senha do PostgreSQL](https://www.postgresql.org/docs/current/libpq-pgpass.html).
+2. Obtenha host, banco e usuário na página **Connect** do banco no Render. Use a senha somente no arquivo de senha local protegido. No macOS/Linux, aplique `chmod 0600 ~/.pgpass`; no Windows, mantenha o arquivo no perfil privado do usuário.
+3. Escolha uma pasta privada em disco criptografado, fora do Git e de pastas sincronizadas sem aprovação. No PowerShell, defina `PGPASSFILE` se o arquivo não estiver no caminho padrão e `PGSSLMODE=require`; então execute, substituindo cada placeholder:
+
+   ```powershell
+   $env:PGSSLMODE = 'require'
+   pg_dump --host 'HOST_EXTERNO' --port 5432 --username 'USUARIO' --dbname 'BANCO' --format=custom --no-owner --no-acl --file 'CAMINHO_PRIVADO\\voltguard-AAAA-MM-DD.dump'
+   if ($LASTEXITCODE -ne 0) { throw 'pg_dump falhou; não trate o arquivo como backup válido.' }
+   pg_restore --list 'CAMINHO_PRIVADO\\voltguard-AAAA-MM-DD.dump' | Out-Null
+   if ($LASTEXITCODE -ne 0) { throw 'O arquivo não passou na leitura de catálogo do pg_restore.' }
+   Get-FileHash -Algorithm SHA256 'CAMINHO_PRIVADO\\voltguard-AAAA-MM-DD.dump'
+   ```
+
+4. Registre a saída de `Get-FileHash` junto da data e do banco de origem, sem incluir segredos. Guarde o arquivo e o hash em local criptografado e com acesso restrito. A leitura do catálogo confirma que o arquivo pode ser lido, mas **não valida a restauração**.
+5. Valide uma restauração completa em PostgreSQL separado e vazio, preferencialmente local enquanto não houver destino pago aprovado. Nunca restaure no banco ativo; não use `--clean` nesse banco.
 
 ## Recuperação após perda ou corrupção de dados
 

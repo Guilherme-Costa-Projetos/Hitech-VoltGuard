@@ -48,9 +48,11 @@
 
 ## Antes de qualquer piloto com dados reais
 
-- [ ] Plano PostgreSQL persistente escolhido e política de expiração confirmada.
+- [ ] Não usar dados reais no serviço/banco Free; Render declara que Free é para teste, não produção, e o PostgreSQL Free expira em 30 dias, sem backup gerenciado.
+- [ ] Confirmar no Dashboard qual banco cada serviço usa e a data de expiração; a auditoria registrou `dpg-db9as5gn74is73f2felg-a` para 15/11/2026. Resolver antes da data sem substituir `DATABASE_URL` às cegas.
+- [ ] Plano PostgreSQL persistente e custo recorrente aprovados pelo responsável; se não aprovado, manter apenas demonstração e planejar encerramento/exportação antes da expiração.
 - [ ] Procedimento em [DATABASE_OPERATIONS.md](DATABASE_OPERATIONS.md) seguido; exportação armazenada em local privado.
-- [ ] Restauração validada em banco separado, sem apontar o serviço ativo antes da validação.
+- [ ] Restauração completa validada em PostgreSQL separado e vazio, sem apontar o serviço ativo antes da validação. `pg_restore --list` sozinho não conta como teste de restauração.
 - [ ] Revisão independente de segurança e testes de isolamento concluídos.
 - [ ] Migrações de banco revisadas com backup.
 - [ ] Política de privacidade, retenção, suporte e resposta a incidentes definida.

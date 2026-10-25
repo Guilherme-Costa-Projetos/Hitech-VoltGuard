@@ -2,6 +2,7 @@
 
 ## Antes do deploy
 
+- [ ] Confirmar que este procedimento é para um workspace/projeto Render novo e vazio. Não aplicar/sincronizar o Blueprint no piloto ativo: ele contém dados, roda PostgreSQL 18 e não corresponde ao Blueprint PostgreSQL 16; uma configuração paralela pode criar outro banco/serviço ou alterar associações.
 - [ ] Confirmar e documentar se o repositório GitHub deve ser público ou privado; em 25/10/2026 o repositório estava público. Não armazenar segredos ou dados de clientes no repositório.
 - [ ] Arquivos do pacote extraídos diretamente na raiz do repositório.
 - [ ] Pasta `vendor/` enviada com `chart.umd.min.js`, `html5-qrcode.min.js` e as duas licenças.

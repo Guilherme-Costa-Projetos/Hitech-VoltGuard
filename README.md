@@ -358,9 +358,11 @@ curl -X POST "https://SEU-SERVICO.onrender.com/api/device/telemetry" \
 3. A resposta deve conter `status: success` e listar `measurements_received`. Consulte o painel e o histórico para confirmar as grandezas recebidas. Alarmes de temperatura e corrente só são avaliados quando a leitura inclui o respectivo campo; a ausência de uma medição não limpa um alarme existente.
 4. Em **Dispositivos**, confirme que “Último uso” foi atualizado. Revogue a credencial e repita a chamada: a API deve responder `401`.
 
-Validação local atual: 28 testes aprovados com as dependências completas, cobrindo rate limiting, MFA, isolamento entre organizações, autenticação em todas as rotas da API, matriz básica de perfis e recusas seguras do comando de bootstrap. O caminho de criação do bootstrap também foi exercitado manualmente em um SQLite temporário vazio. A CI do GitHub valida dependências, sintaxe, testes e build Docker.
+Validação local registrada: 31 testes aprovados com `requirements-test.txt`, cobrindo rate limiting, MFA, isolamento entre organizações, autenticação em todas as rotas da API, matriz básica de perfis e recusas seguras do comando de bootstrap. O caminho de criação do bootstrap também foi exercitado manualmente em um SQLite temporário vazio. A CI do GitHub valida segredos no histórico, dependências, sintaxe, testes e build Docker.
 
 ## Publicação recomendada no Render
+
+**Use este procedimento somente em um workspace/projeto novo e sem recursos ou dados. Não reaplique o `render.yaml` ao piloto atual:** o serviço ativo tem nome/branch próprios, o PostgreSQL já contém registros e está em PostgreSQL 18, enquanto o Blueprint solicita PostgreSQL 16. Uma nova aplicação ou sincronização do Blueprint pode criar recursos paralelos ou alterar a associação de banco. Preserve os recursos existentes e siga `DEPLOYMENT_CHECKLIST.md` e `DATABASE_OPERATIONS.md` antes de qualquer mudança.
 
 1. Extraia o ZIP e confirme que `main.py`, `index.html`, `requirements.txt`, `Dockerfile` e `render.yaml` estão na raiz do repositório.
 2. Crie um repositório **privado** no GitHub e envie o conteúdo da pasta do projeto. Não envie `.env`, bancos locais ou segredos.

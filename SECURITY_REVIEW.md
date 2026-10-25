@@ -6,7 +6,7 @@ Revisão do código e das dependências do branch `codex/commercial-readiness-au
 
 - A suíte local passou com 31 testes usando `requirements-test.txt`. Os testes usam dados locais de teste; nenhuma conexão ou mutação no PostgreSQL do piloto foi feita.
 - A versão atual do Starlette seleciona `httpx2` no `TestClient`; essa dependência foi isolada no ambiente de teste. `httpx` permanece nas dependências de produção para o gateway. A suíte passou sem aviso de depreciação.
-- O run GitHub Actions `40198450995` do commit `5748c201fad4db54253a568af8f99a6a7da91c88` terminou com sucesso. O deploy associado `dep-dbf0cgo473hc739hchig` está `live`.
+- O run GitHub Actions `40199571178` do commit `e3c9530f5bc7a97898ca2710b8277edee134f721` terminou com sucesso, incluindo Gitleaks, `pip-audit`, 31 testes, sintaxe e build Docker. O deploy associado `dep-dbf0jcdg1s2s739qm5o0` está `live`.
 - A rota `/health` retornou `ok`; o cadastro público continuou fechado. Não foram feitos login nem testes de gravação no serviço público.
 - Requisições GET sem credenciais a `/api/panels`, `/api/users` e `/api/export/executive-report` retornaram HTTP 401 JSON, sem expor dados.
 - Render informa que serviços web Free perdem arquivos locais ao entrar em idle após 15 minutos, reiniciar ou fazer deploy. A consulta histórica de eventos não mostrou reinicialização do serviço legado, o que não prova que seu possível arquivo SQLite exista ou esteja preservado. Veja `AUDITORIA_PRONTIDAO_COMERCIAL.md` para o bloqueio de preservação.

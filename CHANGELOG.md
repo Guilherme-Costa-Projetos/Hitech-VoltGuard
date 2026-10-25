@@ -2,6 +2,8 @@
 
 ## Preparação de piloto comercial — 23/10/2026
 
+- CI inclui verificação semanal e em cada push/PR do histórico Git alcançável com Gitleaks fixado; os resultados são redigidos e a permissão do job é somente leitura.
+- Actions de checkout e Python atualizadas para versões Node 24 e fixadas por SHA.
 - MFA passou a ser exigido no login quando ativado e pode ser configurado por todos os perfis; códigos de recuperação são aceitos nos campos móveis.
 - Cadastro público fica desativado por padrão no Render; um comando separado provisiona a primeira organização somente em banco sem registros e exige confirmação explícita.
 - O comando exige um terminal interativo para receber a senha sem eco, verifica todas as tabelas antes e depois da inicialização do esquema e é testado contra bancos temporários.

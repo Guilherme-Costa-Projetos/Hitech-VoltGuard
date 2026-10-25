@@ -367,6 +367,7 @@ class VoltGuardSmokeTests(unittest.TestCase):
             ("patch", "/api/users/tech_rolematrix", {"is_active": False}),
             ("post", "/api/users/tech_rolematrix/revoke-sessions", None),
             ("post", "/api/tenant/webhook", {"webhook_url": ""}),
+            ("post", "/api/tenant/webhook/test", None),
         )
         for method, endpoint, payload in ceo_only_mutations:
             for role, headers in (("Gerente", manager_headers), ("Técnico de Campo", technician_headers)):
@@ -383,6 +384,7 @@ class VoltGuardSmokeTests(unittest.TestCase):
             ("post", "/api/demo/force-failure", {"panel_id": panel_id}),
             ("post", "/api/inventory/update", {"part_name": "Peça de teste", "quantity_change": 1}),
             ("post", "/api/work-order-checklist-templates", {"name": "Modelo de teste", "items": ["Verificar item"]}),
+            ("delete", "/api/work-order-checklist-templates/999999", None),
             ("patch", "/api/assets/999999", {"notes": "Tentativa de edição"}),
             ("post", "/api/devices/credentials", {"panel_id": panel_id, "name": "Gateway de teste"}),
             ("post", "/api/devices/credentials/999999/revoke", None),

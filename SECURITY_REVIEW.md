@@ -10,6 +10,7 @@ Revisão do código e das dependências do branch `codex/commercial-readiness-au
 - A rota `/health` retornou `ok`; o cadastro público continuou fechado. Não foram feitos login nem testes de gravação no serviço público.
 - Requisições GET sem credenciais a `/api/panels`, `/api/users` e `/api/export/executive-report` retornaram HTTP 401 JSON, sem expor dados.
 - Render informa que serviços web Free perdem arquivos locais ao entrar em idle após 15 minutos, reiniciar ou fazer deploy. A consulta histórica de eventos não mostrou reinicialização do serviço legado, o que não prova que seu possível arquivo SQLite exista ou esteja preservado. Veja `AUDITORIA_PRONTIDAO_COMERCIAL.md` para o bloqueio de preservação.
+- Uma nova consulta somente de metadados encontrou o PostgreSQL do piloto com allowlist externa `0.0.0.0/0` (`everywhere`). Isso permite tentativas de conexão de qualquer IPv4, ainda sujeitas à autenticação. Como o destino interno/externo de `DATABASE_URL` não foi confirmado, a lista não foi alterada. Antes de usar dados reais, confirmar que a aplicação usa a URL interna e remover o acesso externo; o Blueprint versionado já declara `ipAllowList: []`.
 
 ## Corrigido nesta revisão
 
